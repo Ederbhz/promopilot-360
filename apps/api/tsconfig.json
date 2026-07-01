@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "baseUrl": "../..",
+    "paths": {
+      "@promopilot/shared": ["packages/shared/dist/index.d.ts"],
+      "@promopilot/marketplace-connectors": ["packages/marketplace-connectors/dist/index.d.ts"],
+      "@promopilot/message-templates": ["packages/message-templates/dist/index.d.ts"]
+    }
+  },
+  "include": ["src"]
+}

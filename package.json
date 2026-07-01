@@ -1,0 +1,25 @@
+{
+  "name": "promopilot-360",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PromoPilot 360 - garimpo inteligente de ofertas no piloto automatico.",
+  "scripts": {
+    "dev": "pnpm build:packages && pnpm --parallel --filter @promopilot/api --filter @promopilot/web dev",
+    "dev:api": "pnpm build:packages && pnpm --filter @promopilot/api dev",
+    "dev:web": "pnpm --filter @promopilot/web dev",
+    "build:packages": "pnpm --filter @promopilot/shared --filter @promopilot/message-templates --filter @promopilot/marketplace-connectors build",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm build:packages && pnpm -r typecheck",
+    "db:generate": "pnpm --filter @promopilot/api db:generate",
+    "db:migrate": "pnpm --filter @promopilot/api db:migrate",
+    "db:seed": "pnpm --filter @promopilot/api db:seed"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  },
+  "packageManager": "pnpm@11.7.0"
+}

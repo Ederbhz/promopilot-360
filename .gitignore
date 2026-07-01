@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+dist
+coverage
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+Dockerfile.local
+postgres_data
+redis_data
+apps/api/prisma/migrations/*/migration_lock.toml

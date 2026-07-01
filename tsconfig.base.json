@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "baseUrl": ".",
+    "paths": {
+      "@promopilot/shared": ["packages/shared/src/index.ts"],
+      "@promopilot/marketplace-connectors": ["packages/marketplace-connectors/src/index.ts"],
+      "@promopilot/message-templates": ["packages/message-templates/src/index.ts"]
+    }
+  }
+}

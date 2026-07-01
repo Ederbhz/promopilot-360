@@ -1,0 +1,256 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+}
+
+enum MarketplaceKey {
+  AWIN
+  SHOPEE
+  MERCADO_LIVRE
+  MAGALU
+  MANUAL
+}
+
+enum IntegrationType {
+  API
+  FEED
+  MANUAL
+  ASSISTED
+}
+
+enum OfferStatus {
+  DRAFT
+  VALIDATING
+  VALID
+  INVALID
+  EXPIRED
+  AFFILIATE_LINK_MISSING
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  PAUSED
+}
+
+enum CampaignStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum Channel {
+  TELEGRAM
+  WHATSAPP
+  INSTAGRAM
+  MANUAL
+}
+
+enum ScheduledPostStatus {
+  SCHEDULED
+  READY_TO_SEND
+  PUBLISHED
+  FAILED
+  CANCELED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String   @db.VarChar(150)
+  email        String   @unique @db.VarChar(180)
+  passwordHash String
+  role         Role     @default(ADMIN)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Marketplace {
+  id               String             @id @default(uuid())
+  name             String             @db.VarChar(100)
+  key              MarketplaceKey     @unique
+  integrationType  IntegrationType
+  baseUrl          String?
+  isActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  affiliateAccounts AffiliateAccount[]
+  products         Product[]
+  offers           Offer[]
+  campaigns        Campaign[]
+  integrationLogs  IntegrationLog[]
+}
+
+model AffiliateAccount {
+  id                   String      @id @default(uuid())
+  marketplaceId        String
+  marketplace          Marketplace @relation(fields: [marketplaceId], references: [id])
+  name                 String      @db.VarChar(120)
+  accountIdentifier    String?     @db.VarChar(180)
+  affiliateTag         String?     @db.VarChar(180)
+  encryptedCredentials Json?
+  config               Json?
+  isActive             Boolean     @default(true)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+}
+
+model Product {
+  id            String      @id @default(uuid())
+  marketplaceId String
+  marketplace   Marketplace @relation(fields: [marketplaceId], references: [id])
+  externalId    String?     @db.VarChar(180)
+  title         String
+  description   String?
+  imageUrl      String?
+  productUrl    String
+  brand         String?     @db.VarChar(120)
+  category      String?     @db.VarChar(120)
+  rating        Decimal?    @db.Decimal(3, 2)
+  reviewCount   Int?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  offers        Offer[]
+
+  @@index([marketplaceId])
+  @@index([externalId])
+}
+
+model Offer {
+  id                  String      @id @default(uuid())
+  productId           String
+  product             Product     @relation(fields: [productId], references: [id])
+  marketplaceId       String
+  marketplace         Marketplace @relation(fields: [marketplaceId], references: [id])
+  originalUrl         String
+  affiliateUrl        String?
+  currentPrice        Decimal?    @db.Decimal(12, 2)
+  oldPrice            Decimal?    @db.Decimal(12, 2)
+  discountPercent     Decimal?    @db.Decimal(5, 2)
+  couponCode          String?     @db.VarChar(120)
+  couponDescription   String?
+  freeShipping        Boolean?
+  estimatedCommission Decimal?    @db.Decimal(12, 2)
+  commissionPercent   Decimal?    @db.Decimal(5, 2)
+  score               Decimal?    @db.Decimal(5, 2)
+  status              OfferStatus @default(DRAFT)
+  validUntil          DateTime?
+  metadata            Json?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  scheduledPosts      ScheduledPost[]
+  publishLogs         PublishLog[]
+  shortLinks          ShortLink[]
+  clickEvents         ClickEvent[]
+
+  @@index([marketplaceId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model MessageTemplate {
+  id         String     @id @default(uuid())
+  name       String     @db.VarChar(120)
+  channel    Channel
+  content    String
+  isDefault  Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  campaigns  Campaign[]
+}
+
+model Campaign {
+  id                    String         @id @default(uuid())
+  name                  String         @db.VarChar(150)
+  marketplaceId         String?
+  marketplace           Marketplace?   @relation(fields: [marketplaceId], references: [id])
+  templateId            String?
+  template              MessageTemplate? @relation(fields: [templateId], references: [id])
+  channel               Channel
+  status                CampaignStatus @default(PAUSED)
+  startTime             String?
+  endTime               String?
+  intervalMinutes       Int            @default(30)
+  dailyLimit            Int            @default(30)
+  requireManualApproval Boolean        @default(true)
+  allowRepost           Boolean        @default(false)
+  minHoursToRepost      Int            @default(72)
+  config                Json?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  scheduledPosts        ScheduledPost[]
+}
+
+model ScheduledPost {
+  id            String              @id @default(uuid())
+  campaignId    String?
+  campaign      Campaign?           @relation(fields: [campaignId], references: [id])
+  offerId       String
+  offer         Offer               @relation(fields: [offerId], references: [id])
+  channel       Channel
+  message       String
+  scheduledAt   DateTime
+  publishedAt   DateTime?
+  status        ScheduledPostStatus @default(SCHEDULED)
+  errorMessage  String?
+  retryCount    Int                 @default(0)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  publishLogs   PublishLog[]
+
+  @@index([status, scheduledAt])
+}
+
+model PublishLog {
+  id              String         @id @default(uuid())
+  scheduledPostId String?
+  scheduledPost   ScheduledPost? @relation(fields: [scheduledPostId], references: [id])
+  offerId         String?
+  offer           Offer?         @relation(fields: [offerId], references: [id])
+  channel         Channel
+  status          String         @db.VarChar(50)
+  providerResponse Json?
+  errorMessage    String?
+  createdAt       DateTime       @default(now())
+}
+
+model ShortLink {
+  id             String       @id @default(uuid())
+  offerId        String?
+  offer          Offer?       @relation(fields: [offerId], references: [id])
+  code           String       @unique @db.VarChar(80)
+  destinationUrl String
+  clickCount     Int          @default(0)
+  createdAt      DateTime     @default(now())
+  clickEvents    ClickEvent[]
+}
+
+model ClickEvent {
+  id          String    @id @default(uuid())
+  shortLinkId String?
+  shortLink   ShortLink? @relation(fields: [shortLinkId], references: [id])
+  offerId     String?
+  offer       Offer?    @relation(fields: [offerId], references: [id])
+  userAgent   String?
+  ipHash      String?
+  referer     String?
+  clickedAt   DateTime  @default(now())
+}
+
+model IntegrationLog {
+  id              String       @id @default(uuid())
+  marketplaceId   String?
+  marketplace     Marketplace? @relation(fields: [marketplaceId], references: [id])
+  operation       String       @db.VarChar(120)
+  status          String       @db.VarChar(50)
+  requestPayload  Json?
+  responsePayload Json?
+  errorMessage    String?
+  createdAt       DateTime     @default(now())
+}

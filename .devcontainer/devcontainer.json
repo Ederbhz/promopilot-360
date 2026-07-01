@@ -1,0 +1,39 @@
+{
+  "name": "PromoPilot 360",
+  "dockerComposeFile": [
+    "../docker-compose.yml",
+    "docker-compose.yml"
+  ],
+  "service": "workspace",
+  "workspaceFolder": "/workspace",
+  "runServices": [
+    "workspace",
+    "postgres",
+    "redis"
+  ],
+  "forwardPorts": [
+    3000,
+    4000,
+    5432,
+    6379
+  ],
+  "portsAttributes": {
+    "3000": {
+      "label": "PromoPilot Web"
+    },
+    "4000": {
+      "label": "PromoPilot API"
+    }
+  },
+  "postCreateCommand": "corepack enable && corepack prepare pnpm@11.7.0 --activate && pnpm install && pnpm db:generate",
+  "postStartCommand": "pnpm db:migrate && pnpm db:seed",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Prisma.prisma",
+        "bradlc.vscode-tailwindcss",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}
