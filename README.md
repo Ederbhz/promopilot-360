@@ -107,6 +107,8 @@ DEFAULT_ADMIN_EMAIL=seu-email
 DEFAULT_ADMIN_PASSWORD=sua-senha-forte
 ```
 
+Em producao, o seed desativa o admin padrao se essas duas variaveis nao estiverem definidas.
+
 Depois que o Render gerar a URL real da API, volte ao GitHub e defina:
 
 ```text

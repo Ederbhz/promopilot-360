@@ -131,12 +131,24 @@ async function main() {
     });
   }
 
-  const email = process.env.DEFAULT_ADMIN_EMAIL || "admin@promopilot.local";
-  const password = process.env.DEFAULT_ADMIN_PASSWORD || "promopilot123";
+  const explicitAdminEmail = process.env.DEFAULT_ADMIN_EMAIL?.trim();
+  const explicitAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD?.trim();
+
+  if (process.env.APP_ENV === "production" && (!explicitAdminEmail || !explicitAdminPassword)) {
+    await prisma.user.updateMany({
+      where: { email: "admin@promopilot.local" },
+      data: { isActive: false }
+    });
+    console.warn("DEFAULT_ADMIN_EMAIL and DEFAULT_ADMIN_PASSWORD must be set in production.");
+    return;
+  }
+
+  const email = explicitAdminEmail || "admin@promopilot.local";
+  const password = explicitAdminPassword || "promopilot123";
   const passwordHash = await bcrypt.hash(password, 12);
   await prisma.user.upsert({
     where: { email },
-    update: process.env.DEFAULT_ADMIN_PASSWORD
+    update: explicitAdminPassword
       ? {
           name: "Administrador",
           passwordHash,
