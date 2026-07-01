@@ -133,13 +133,20 @@ async function main() {
 
   const email = process.env.DEFAULT_ADMIN_EMAIL || "admin@promopilot.local";
   const password = process.env.DEFAULT_ADMIN_PASSWORD || "promopilot123";
+  const passwordHash = await bcrypt.hash(password, 12);
   await prisma.user.upsert({
     where: { email },
-    update: {},
+    update: process.env.DEFAULT_ADMIN_PASSWORD
+      ? {
+          name: "Administrador",
+          passwordHash,
+          isActive: true
+        }
+      : {},
     create: {
       name: "Administrador",
       email,
-      passwordHash: await bcrypt.hash(password, 12)
+      passwordHash
     }
   });
 }
