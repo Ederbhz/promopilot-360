@@ -82,6 +82,8 @@ Ele cria:
 - Render Postgres `promopilot360-postgres`
 - Render Key Value `promopilot360-redis`
 
+No plano free do Render, migrations e seed rodam no `startCommand`, porque `preDeployCommand` nao e suportado para servicos gratuitos.
+
 No Render:
 
 1. Conecte o repositorio GitHub.

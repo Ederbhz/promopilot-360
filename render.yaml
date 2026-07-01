@@ -5,8 +5,7 @@ services:
     plan: free
     region: oregon
     buildCommand: corepack enable && corepack prepare pnpm@11.7.0 --activate && pnpm install --frozen-lockfile && pnpm db:generate && pnpm build:packages && pnpm --filter @promopilot/api build
-    preDeployCommand: corepack enable && corepack prepare pnpm@11.7.0 --activate && pnpm --filter @promopilot/api db:deploy && pnpm --filter @promopilot/api db:seed
-    startCommand: corepack enable && corepack prepare pnpm@11.7.0 --activate && pnpm --filter @promopilot/api start
+    startCommand: corepack enable && corepack prepare pnpm@11.7.0 --activate && pnpm --filter @promopilot/api db:deploy && pnpm --filter @promopilot/api db:seed && pnpm --filter @promopilot/api start
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
