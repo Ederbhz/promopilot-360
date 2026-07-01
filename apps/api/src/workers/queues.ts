@@ -12,11 +12,7 @@ export const queueNames = {
 } as const;
 
 export async function startBullMqScheduler() {
-  const connection = {
-    host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
-    maxRetriesPerRequest: null
-  };
+  const connection = buildRedisConnection();
 
   const scheduledPostsQueue = new Queue(queueNames.scheduledPosts, { connection });
   const worker = new Worker(
@@ -41,5 +37,25 @@ export async function startBullMqScheduler() {
       await worker.close();
       await scheduledPostsQueue.close();
     }
+  };
+}
+
+function buildRedisConnection() {
+  if (!env.REDIS_URL) {
+    return {
+      host: env.REDIS_HOST,
+      port: env.REDIS_PORT,
+      maxRetriesPerRequest: null
+    };
+  }
+
+  const url = new URL(env.REDIS_URL);
+  return {
+    host: url.hostname,
+    port: Number(url.port || 6379),
+    username: url.username || undefined,
+    password: url.password || undefined,
+    tls: url.protocol === "rediss:" ? {} : undefined,
+    maxRetriesPerRequest: null
   };
 }

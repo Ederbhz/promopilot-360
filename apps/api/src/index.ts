@@ -16,7 +16,7 @@ const app = express();
 app.use(helmet());
 app.use(
   cors({
-    origin: env.APP_URL,
+    origin: resolveCorsOrigins(),
     credentials: true
   })
 );
@@ -85,4 +85,12 @@ async function shutdown() {
 
 function reqLogger(error: unknown) {
   console.error(error);
+}
+
+function resolveCorsOrigins() {
+  const origins = env.CORS_ALLOWED_ORIGINS
+    ? env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
+    : [env.APP_URL];
+
+  return origins;
 }

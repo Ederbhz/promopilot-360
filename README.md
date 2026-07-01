@@ -68,6 +68,46 @@ No GitHub:
 
 Se essa variavel nao existir, o frontend publicado tentara chamar `http://localhost:4000`, que so funciona em ambiente local/Codespaces.
 
+## Hospedar API no Render
+
+O Blueprint do Render esta em:
+
+```text
+render.yaml
+```
+
+Ele cria:
+
+- Web Service `promopilot360-api`
+- Render Postgres `promopilot360-postgres`
+- Render Key Value `promopilot360-redis`
+
+No Render:
+
+1. Conecte o repositorio GitHub.
+2. Escolha **New > Blueprint**.
+3. Selecione este repositorio.
+4. Informe as variaveis marcadas como `sync: false`.
+5. Crie o Blueprint.
+
+Variaveis obrigatorias para o primeiro deploy:
+
+```text
+APP_URL=https://SEU_USUARIO.github.io/promopilot-360
+CORS_ALLOWED_ORIGINS=https://SEU_USUARIO.github.io/promopilot-360
+API_URL=https://promopilot360-api.onrender.com
+DEFAULT_ADMIN_EMAIL=seu-email
+DEFAULT_ADMIN_PASSWORD=sua-senha-forte
+```
+
+Depois que o Render gerar a URL real da API, volte ao GitHub e defina:
+
+```text
+NEXT_PUBLIC_API_URL=https://URL-REAL-DA-API.onrender.com
+```
+
+Em seguida, rode novamente o workflow de GitHub Pages para o frontend apontar para a API publicada.
+
 Usuario inicial definido em `.env`:
 
 ```env

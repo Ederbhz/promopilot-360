@@ -1,0 +1,85 @@
+services:
+  - type: web
+    name: promopilot360-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: corepack enable && corepack prepare pnpm@11.7.0 --activate && pnpm install --frozen-lockfile && pnpm db:generate && pnpm build:packages && pnpm --filter @promopilot/api build
+    preDeployCommand: corepack enable && corepack prepare pnpm@11.7.0 --activate && pnpm --filter @promopilot/api db:deploy && pnpm --filter @promopilot/api db:seed
+    startCommand: corepack enable && corepack prepare pnpm@11.7.0 --activate && pnpm --filter @promopilot/api start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: APP_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: API_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: promopilot360-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: promopilot360-redis
+          type: keyvalue
+          property: connectionString
+      - key: DEFAULT_ADMIN_EMAIL
+        sync: false
+      - key: DEFAULT_ADMIN_PASSWORD
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_DEFAULT_CHAT_ID
+        sync: false
+      - key: AWIN_API_TOKEN
+        sync: false
+      - key: AWIN_PUBLISHER_ID
+        sync: false
+      - key: AWIN_NATURA_ADVERTISER_ID
+        sync: false
+      - key: SHOPEE_APP_ID
+        sync: false
+      - key: SHOPEE_APP_SECRET
+        sync: false
+      - key: SHOPEE_AFFILIATE_ID
+        sync: false
+      - key: SHOPEE_API_BASE_URL
+        sync: false
+      - key: MELI_CLIENT_ID
+        sync: false
+      - key: MELI_CLIENT_SECRET
+        sync: false
+      - key: MELI_REDIRECT_URI
+        sync: false
+      - key: MELI_AFFILIATE_TAG
+        sync: false
+      - key: MAGALU_STORE_URL
+        sync: false
+      - key: MAGALU_PARTNER_ID
+        sync: false
+      - key: SHORT_LINK_DOMAIN
+        sync: false
+
+  - type: keyvalue
+    name: promopilot360-redis
+    plan: free
+    region: oregon
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+databases:
+  - name: promopilot360-postgres
+    plan: free
+    region: oregon
+    databaseName: promopilot360
+    user: promopilot
