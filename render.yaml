@@ -14,11 +14,11 @@ services:
       - key: APP_ENV
         value: production
       - key: APP_URL
-        sync: false
+        value: https://ederbhz.github.io/promopilot-360
       - key: CORS_ALLOWED_ORIGINS
-        sync: false
+        value: https://ederbhz.github.io
       - key: API_URL
-        sync: false
+        value: https://promopilot360-api.onrender.com
       - key: JWT_SECRET
         generateValue: true
       - key: ENCRYPTION_KEY
