@@ -11,8 +11,8 @@ Garimpo inteligente de ofertas no piloto automatico.
 
 ## Requisitos
 
-- Node.js 20+
-- pnpm 9+
+- Node.js 24+
+- pnpm 11.7+
 - Docker com Docker Compose para PostgreSQL e Redis
 
 ## Primeira execucao
