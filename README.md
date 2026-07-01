@@ -96,7 +96,7 @@ Variaveis obrigatorias para o primeiro deploy:
 
 ```text
 APP_URL=https://SEU_USUARIO.github.io/promopilot-360
-CORS_ALLOWED_ORIGINS=https://SEU_USUARIO.github.io/promopilot-360
+CORS_ALLOWED_ORIGINS=https://SEU_USUARIO.github.io
 API_URL=https://promopilot360-api.onrender.com
 DEFAULT_ADMIN_EMAIL=seu-email
 DEFAULT_ADMIN_PASSWORD=sua-senha-forte

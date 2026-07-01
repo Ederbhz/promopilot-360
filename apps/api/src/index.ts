@@ -92,5 +92,13 @@ function resolveCorsOrigins() {
     ? env.CORS_ALLOWED_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
     : [env.APP_URL];
 
-  return origins;
+  return origins.map(toCorsOrigin);
+}
+
+function toCorsOrigin(value: string) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value;
+  }
 }
