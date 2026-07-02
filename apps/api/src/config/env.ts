@@ -23,6 +23,7 @@ const envSchema = z.object({
   SHOPEE_APP_SECRET: z.string().optional(),
   SHOPEE_AFFILIATE_ID: z.string().optional(),
   SHOPEE_API_BASE_URL: z.string().optional(),
+  MELI_ACCESS_TOKEN: z.string().optional(),
   MELI_AFFILIATE_TAG: z.string().optional(),
   MAGALU_STORE_URL: z.string().optional(),
   TELEGRAM_BOT_TOKEN: z.string().optional(),

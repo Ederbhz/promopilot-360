@@ -60,6 +60,8 @@ services:
         sync: false
       - key: MELI_REDIRECT_URI
         sync: false
+      - key: MELI_ACCESS_TOKEN
+        sync: false
       - key: MELI_AFFILIATE_TAG
         sync: false
       - key: MAGALU_STORE_URL

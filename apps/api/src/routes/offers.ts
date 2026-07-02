@@ -14,7 +14,7 @@ import {
 import { asyncHandler, HttpError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { jsonInput } from "../lib/sanitize.js";
-import { connectors } from "../services/connectors.js";
+import { connectors, getConnectorForMarketplace } from "../services/connectors.js";
 import { renderOfferMessage } from "../services/message-service.js";
 import { env } from "../config/env.js";
 
@@ -115,10 +115,18 @@ router.post(
       : (await prisma.marketplace.findMany({ where: { isActive: true } })).map((item) => item.key);
 
     const candidates: OfferCandidate[] = [];
+    const warnings: Array<{ marketplaceKey: string; message: string }> = [];
     for (const key of keys) {
-      const connector = connectors[key] ?? connectors.MANUAL;
-      const results = await connector.searchOffers({ ...params, marketplaceKey: key });
-      candidates.push(...results);
+      const connector = await getConnectorForMarketplace(key as MarketplaceKey);
+      try {
+        const results = await connector.searchOffers({ ...params, marketplaceKey: key });
+        candidates.push(...results);
+      } catch (error) {
+        warnings.push({
+          marketplaceKey: key,
+          message: error instanceof Error ? error.message : "Falha desconhecida ao buscar ofertas."
+        });
+      }
     }
 
     const saved = [];
@@ -126,7 +134,7 @@ router.post(
       saved.push(await persistCandidate({ ...candidate, score: candidate.score ?? calculateOfferScore(candidate) }));
     }
 
-    res.json({ count: saved.length, offers: saved });
+    res.json({ count: saved.length, offers: saved, warnings });
   })
 );
 
@@ -220,7 +228,7 @@ router.post(
       return;
     }
 
-    const connector = connectors[offer.marketplace.key] ?? connectors.MANUAL;
+    const connector = await getConnectorForMarketplace(offer.marketplace.key);
     const result = await connector.generateAffiliateLink({
       marketplaceKey: offer.marketplace.key,
       destinationUrl: offer.originalUrl

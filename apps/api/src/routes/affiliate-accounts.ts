@@ -4,7 +4,7 @@ import { encryptJson } from "../lib/crypto.js";
 import { asyncHandler, HttpError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { jsonInput, sanitizeAffiliateAccount } from "../lib/sanitize.js";
-import { connectors } from "../services/connectors.js";
+import { getConnectorForAffiliateAccount } from "../services/connectors.js";
 
 const router = Router();
 
@@ -90,7 +90,8 @@ router.post(
       include: { marketplace: true }
     });
     if (!account) throw new HttpError(404, "Conta de afiliado nao encontrada.");
-    const health = await connectors[account.marketplace.key].healthCheck();
+    const connector = getConnectorForAffiliateAccount(account);
+    const health = await connector.healthCheck();
     await prisma.integrationLog.create({
       data: {
         marketplaceId: account.marketplaceId,

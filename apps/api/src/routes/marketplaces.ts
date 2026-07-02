@@ -1,7 +1,7 @@
 import { IntegrationType, MarketplaceKey } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
-import { connectors } from "../services/connectors.js";
+import { getMarketplaceHealth } from "../services/connectors.js";
 import { asyncHandler, HttpError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 
@@ -25,7 +25,7 @@ router.get(
     const health = await Promise.all(
       marketplaces.map(async (marketplace) => ({
         key: marketplace.key,
-        health: await connectors[marketplace.key].healthCheck()
+        health: await getMarketplaceHealth(marketplace.key)
       }))
     );
     const healthByKey = Object.fromEntries(health.map((item) => [item.key, item.health]));

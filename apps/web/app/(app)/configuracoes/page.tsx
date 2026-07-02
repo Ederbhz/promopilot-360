@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { PlugZap, Save, ShieldCheck } from "lucide-react";
 import { ErrorLine } from "@/components/AsyncState";
 import { PageHeader } from "@/components/PageHeader";
@@ -27,6 +27,41 @@ interface AffiliateAccount {
   marketplace: { id: string; name: string; key: string };
 }
 
+type QuickFieldTarget = "credentials" | "config" | "accountIdentifier" | "affiliateTag";
+
+interface QuickField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  target: QuickFieldTarget;
+  secret?: boolean;
+}
+
+const programFields: Record<string, QuickField[]> = {
+  AWIN: [
+    { key: "apiToken", label: "Token da API", target: "credentials", secret: true },
+    { key: "publisherId", label: "Publisher ID", target: "affiliateTag" },
+    { key: "advertiserId", label: "Advertiser ID", placeholder: "Natura/Avon", target: "config" }
+  ],
+  SHOPEE: [
+    { key: "appId", label: "App ID", target: "accountIdentifier" },
+    { key: "appSecret", label: "App Secret", target: "credentials", secret: true },
+    { key: "affiliateId", label: "Affiliate ID", target: "affiliateTag" },
+    { key: "apiBaseUrl", label: "URL da API", placeholder: "Opcional", target: "config" }
+  ],
+  MERCADO_LIVRE: [
+    { key: "accessToken", label: "Access Token", target: "credentials", secret: true },
+    { key: "affiliateTag", label: "Tag de afiliado", placeholder: "matt_tool", target: "affiliateTag" }
+  ],
+  MAGALU: [
+    { key: "storeUrl", label: "URL da loja/divulgador", target: "accountIdentifier" },
+    { key: "partnerId", label: "Partner ID", placeholder: "Opcional", target: "config" }
+  ],
+  MANUAL: [
+    { key: "defaultTag", label: "Identificador padrao", placeholder: "Opcional", target: "affiliateTag" }
+  ]
+};
+
 export default function ConfiguracoesPage() {
   const [marketplaces, setMarketplaces] = useState<Marketplace[]>([]);
   const [accounts, setAccounts] = useState<AffiliateAccount[]>([]);
@@ -38,8 +73,14 @@ export default function ConfiguracoesPage() {
     credentials: "{}",
     config: "{}"
   });
+  const [quickFields, setQuickFields] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const selectedMarketplace = useMemo(
+    () => marketplaces.find((marketplace) => marketplace.id === form.marketplaceId),
+    [form.marketplaceId, marketplaces]
+  );
+  const selectedProgramFields = selectedMarketplace ? programFields[selectedMarketplace.key] ?? [] : [];
 
   async function load() {
     const [marketplaceData, accountData] = await Promise.all([
@@ -50,7 +91,11 @@ export default function ConfiguracoesPage() {
     setAccounts(accountData);
     const firstMarketplace = marketplaceData[0];
     if (!form.marketplaceId && firstMarketplace) {
-      setForm((current) => ({ ...current, marketplaceId: firstMarketplace.id }));
+      setForm((current) => ({
+        ...current,
+        marketplaceId: firstMarketplace.id,
+        name: current.name || `Programa ${firstMarketplace.name}`
+      }));
     }
   }
 
@@ -63,15 +108,29 @@ export default function ConfiguracoesPage() {
     setError("");
     setMessage("");
     try {
+      const payload = buildProgramPayload({
+        form,
+        quickFields,
+        selectedMarketplace,
+        selectedProgramFields
+      });
       await postJson("/affiliate-accounts", {
         marketplaceId: form.marketplaceId,
-        name: form.name,
-        accountIdentifier: form.accountIdentifier || undefined,
-        affiliateTag: form.affiliateTag || undefined,
-        credentials: parseJson(form.credentials),
-        config: parseJson(form.config)
+        name: payload.name,
+        accountIdentifier: payload.accountIdentifier,
+        affiliateTag: payload.affiliateTag,
+        credentials: payload.credentials,
+        config: payload.config
       });
-      setForm({ ...form, name: "", accountIdentifier: "", affiliateTag: "", credentials: "{}", config: "{}" });
+      setForm({
+        ...form,
+        name: selectedMarketplace ? `Programa ${selectedMarketplace.name}` : "",
+        accountIdentifier: "",
+        affiliateTag: "",
+        credentials: "{}",
+        config: "{}"
+      });
+      setQuickFields({});
       await load();
       setMessage("Conta salva com credenciais criptografadas.");
     } catch (err) {
@@ -116,7 +175,15 @@ export default function ConfiguracoesPage() {
               <select
                 className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
                 value={form.marketplaceId}
-                onChange={(event) => setForm({ ...form, marketplaceId: event.target.value })}
+                onChange={(event) => {
+                  const marketplace = marketplaces.find((item) => item.id === event.target.value);
+                  setQuickFields({});
+                  setForm({
+                    ...form,
+                    marketplaceId: event.target.value,
+                    name: marketplace ? `Programa ${marketplace.name}` : form.name
+                  });
+                }}
               >
                 {marketplaces.map((marketplace) => (
                   <option key={marketplace.id} value={marketplace.id}>
@@ -134,6 +201,22 @@ export default function ConfiguracoesPage() {
                 required
               />
             </label>
+            {selectedProgramFields.length ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {selectedProgramFields.map((field) => (
+                  <label className="block" key={field.key}>
+                    <span className="mb-1 block text-sm font-medium">{field.label}</span>
+                    <input
+                      className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                      type={field.secret ? "password" : "text"}
+                      value={quickFields[field.key] ?? ""}
+                      placeholder={field.placeholder}
+                      onChange={(event) => setQuickFields({ ...quickFields, [field.key]: event.target.value })}
+                    />
+                  </label>
+                ))}
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">Identificador</span>
@@ -207,4 +290,40 @@ function parseJson(value: string) {
   const trimmed = value.trim();
   if (!trimmed || trimmed === "{}") return undefined;
   return JSON.parse(trimmed) as Record<string, unknown>;
+}
+
+function buildProgramPayload(input: {
+  form: {
+    marketplaceId: string;
+    name: string;
+    accountIdentifier: string;
+    affiliateTag: string;
+    credentials: string;
+    config: string;
+  };
+  quickFields: Record<string, string>;
+  selectedMarketplace?: Marketplace;
+  selectedProgramFields: QuickField[];
+}) {
+  const credentials = parseJson(input.form.credentials) ?? {};
+  const config = parseJson(input.form.config) ?? {};
+  let accountIdentifier = input.form.accountIdentifier || undefined;
+  let affiliateTag = input.form.affiliateTag || undefined;
+
+  for (const field of input.selectedProgramFields) {
+    const value = input.quickFields[field.key]?.trim();
+    if (!value) continue;
+    if (field.target === "credentials") credentials[field.key] = value;
+    if (field.target === "config") config[field.key] = value;
+    if (field.target === "accountIdentifier") accountIdentifier = value;
+    if (field.target === "affiliateTag") affiliateTag = value;
+  }
+
+  return {
+    name: input.form.name || (input.selectedMarketplace ? `Programa ${input.selectedMarketplace.name}` : "Programa de afiliado"),
+    accountIdentifier,
+    affiliateTag,
+    credentials: Object.keys(credentials).length ? credentials : undefined,
+    config: Object.keys(config).length ? config : undefined
+  };
 }

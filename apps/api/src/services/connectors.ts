@@ -1,7 +1,11 @@
 import { createConnectorRegistry } from "@promopilot/marketplace-connectors";
+import type { ConnectorEnv } from "@promopilot/marketplace-connectors";
+import type { MarketplaceKey } from "@prisma/client";
 import { env } from "../config/env.js";
+import { decryptJson } from "../lib/crypto.js";
+import { prisma } from "../lib/prisma.js";
 
-export const connectors = createConnectorRegistry({
+const baseConnectorEnv: ConnectorEnv = {
   AWIN_API_TOKEN: env.AWIN_API_TOKEN,
   AWIN_PUBLISHER_ID: env.AWIN_PUBLISHER_ID,
   AWIN_NATURA_ADVERTISER_ID: env.AWIN_NATURA_ADVERTISER_ID,
@@ -9,6 +13,123 @@ export const connectors = createConnectorRegistry({
   SHOPEE_APP_SECRET: env.SHOPEE_APP_SECRET,
   SHOPEE_AFFILIATE_ID: env.SHOPEE_AFFILIATE_ID,
   SHOPEE_API_BASE_URL: env.SHOPEE_API_BASE_URL,
+  MELI_ACCESS_TOKEN: env.MELI_ACCESS_TOKEN,
   MELI_AFFILIATE_TAG: env.MELI_AFFILIATE_TAG,
   MAGALU_STORE_URL: env.MAGALU_STORE_URL
-});
+};
+
+export const connectors = createConnectorRegistry(baseConnectorEnv);
+
+export async function getConnectorForMarketplace(key: MarketplaceKey) {
+  const account = await prisma.affiliateAccount.findFirst({
+    where: {
+      isActive: true,
+      marketplace: { key }
+    },
+    include: { marketplace: true },
+    orderBy: { updatedAt: "desc" }
+  });
+
+  if (!account) return connectors[key] ?? connectors.MANUAL;
+  return getConnectorForAffiliateAccount(account);
+}
+
+export function getConnectorForAffiliateAccount(account: {
+  marketplace: { key: MarketplaceKey };
+  accountIdentifier?: string | null;
+  affiliateTag?: string | null;
+  encryptedCredentials?: unknown;
+  config?: unknown;
+}) {
+  const accountEnv = accountToConnectorEnv(account);
+  return createConnectorRegistry({ ...baseConnectorEnv, ...accountEnv })[account.marketplace.key] ?? connectors.MANUAL;
+}
+
+export async function getMarketplaceHealth(key: MarketplaceKey) {
+  const connector = await getConnectorForMarketplace(key);
+  return connector.healthCheck();
+}
+
+function accountToConnectorEnv(account: {
+  marketplace: { key: MarketplaceKey };
+  accountIdentifier?: string | null;
+  affiliateTag?: string | null;
+  encryptedCredentials?: unknown;
+  config?: unknown;
+}): ConnectorEnv {
+  const credentials = safeDecrypt(account.encryptedCredentials);
+  const config = toRecord(account.config);
+
+  switch (account.marketplace.key) {
+    case "AWIN":
+      return {
+        AWIN_API_TOKEN: pick(credentials, "apiToken", "token", "AWIN_API_TOKEN"),
+        AWIN_PUBLISHER_ID:
+          account.affiliateTag ??
+          account.accountIdentifier ??
+          pick(credentials, "publisherId", "affiliateId", "AWIN_PUBLISHER_ID") ??
+          pick(config, "publisherId", "affiliateId", "AWIN_PUBLISHER_ID"),
+        AWIN_NATURA_ADVERTISER_ID:
+          pick(credentials, "advertiserId", "naturaAdvertiserId", "AWIN_NATURA_ADVERTISER_ID") ??
+          pick(config, "advertiserId", "naturaAdvertiserId", "AWIN_NATURA_ADVERTISER_ID")
+      };
+    case "SHOPEE":
+      return {
+        SHOPEE_APP_ID:
+          account.accountIdentifier ??
+          pick(credentials, "appId", "app_id", "clientId", "SHOPEE_APP_ID") ??
+          pick(config, "appId", "app_id", "clientId", "SHOPEE_APP_ID"),
+        SHOPEE_APP_SECRET:
+          pick(credentials, "appSecret", "app_secret", "secret", "SHOPEE_APP_SECRET") ??
+          pick(config, "appSecret", "app_secret", "secret", "SHOPEE_APP_SECRET"),
+        SHOPEE_AFFILIATE_ID:
+          account.affiliateTag ??
+          pick(credentials, "affiliateId", "publisherId", "tag", "SHOPEE_AFFILIATE_ID") ??
+          pick(config, "affiliateId", "publisherId", "tag", "SHOPEE_AFFILIATE_ID"),
+        SHOPEE_API_BASE_URL:
+          pick(credentials, "apiBaseUrl", "baseUrl", "SHOPEE_API_BASE_URL") ??
+          pick(config, "apiBaseUrl", "baseUrl", "SHOPEE_API_BASE_URL")
+      };
+    case "MERCADO_LIVRE":
+      return {
+        MELI_ACCESS_TOKEN:
+          pick(credentials, "accessToken", "token", "MELI_ACCESS_TOKEN") ??
+          pick(config, "accessToken", "token", "MELI_ACCESS_TOKEN"),
+        MELI_AFFILIATE_TAG:
+          account.affiliateTag ??
+          pick(credentials, "affiliateTag", "tag", "mattTool", "MELI_AFFILIATE_TAG") ??
+          pick(config, "affiliateTag", "tag", "mattTool", "MELI_AFFILIATE_TAG")
+      };
+    case "MAGALU":
+      return {
+        MAGALU_STORE_URL:
+          account.accountIdentifier ??
+          account.affiliateTag ??
+          pick(credentials, "storeUrl", "partnerUrl", "MAGALU_STORE_URL") ??
+          pick(config, "storeUrl", "partnerUrl", "MAGALU_STORE_URL")
+      };
+    default:
+      return {};
+  }
+}
+
+function safeDecrypt(payload: unknown): Record<string, unknown> {
+  try {
+    return toRecord(decryptJson<Record<string, unknown>>(payload));
+  } catch {
+    return {};
+  }
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function pick(record: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return undefined;
+}

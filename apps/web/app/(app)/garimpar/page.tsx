@@ -29,7 +29,16 @@ export default function GarimparPage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [marketplaceKey, setMarketplaceKey] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [sortBy, setSortBy] = useState("score");
+  const [minDiscount, setMinDiscount] = useState("");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [limit, setLimit] = useState("20");
+  const [productUrl, setProductUrl] = useState("");
+  const [affiliateUrl, setAffiliateUrl] = useState("");
+  const [couponCode, setCouponCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [importingUrl, setImportingUrl] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -44,18 +53,53 @@ export default function GarimparPage() {
     setError("");
     setMessage("");
     try {
-      const result = await postJson<{ offers: Offer[]; count: number }>("/offers/search", {
+      const result = await postJson<{
+        offers: Offer[];
+        count: number;
+        warnings?: Array<{ marketplaceKey: string; message: string }>;
+      }>("/offers/search", {
         marketplaceKey: marketplaceKey || undefined,
         keyword: keyword || undefined,
-        limit: 20,
-        sortBy: "score"
+        minDiscount: numberOrUndefined(minDiscount),
+        minPrice: numberOrUndefined(minPrice),
+        maxPrice: numberOrUndefined(maxPrice),
+        limit: Number(limit) || 20,
+        sortBy
       });
       setOffers(result.offers);
-      setMessage(`${result.count} ofertas importadas.`);
+      setMessage(
+        [
+          `${result.count} ofertas importadas.`,
+          ...(result.warnings ?? []).map((warning) => `${warning.marketplaceKey}: ${warning.message}`)
+        ].join(" ")
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao buscar ofertas.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function importProductUrl(event: FormEvent) {
+    event.preventDefault();
+    setImportingUrl(true);
+    setError("");
+    setMessage("");
+    try {
+      const offer = await postJson<Offer>("/offers/manual-url", {
+        url: productUrl,
+        affiliateUrl: affiliateUrl || undefined,
+        couponCode: couponCode || undefined
+      });
+      setOffers((current) => [offer, ...current]);
+      setProductUrl("");
+      setAffiliateUrl("");
+      setCouponCode("");
+      setMessage("Produto importado para divulgacao.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao importar link.");
+    } finally {
+      setImportingUrl(false);
     }
   }
 
@@ -74,8 +118,49 @@ export default function GarimparPage() {
   return (
     <>
       <PageHeader title="Garimpar ofertas" eyebrow="Busca" />
+      <Panel className="mb-4">
+        <form onSubmit={importProductUrl} className="grid gap-3 lg:grid-cols-[1.4fr_1.2fr_0.7fr_auto]">
+          <label>
+            <span className="mb-1 block text-sm font-medium">Link do produto</span>
+            <input
+              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+              value={productUrl}
+              onChange={(event) => setProductUrl(event.target.value)}
+              placeholder="https://..."
+              type="url"
+              required
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-sm font-medium">Link afiliado final</span>
+            <input
+              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+              value={affiliateUrl}
+              onChange={(event) => setAffiliateUrl(event.target.value)}
+              placeholder="Opcional"
+              type="url"
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-sm font-medium">Cupom</span>
+            <input
+              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+              value={couponCode}
+              onChange={(event) => setCouponCode(event.target.value)}
+              placeholder="Opcional"
+            />
+          </label>
+          <button
+            className="focus-ring mt-auto flex items-center justify-center gap-2 rounded-md bg-amber px-4 py-2 font-semibold text-ink hover:bg-amber/90 disabled:opacity-70"
+            disabled={importingUrl}
+          >
+            <Link2 size={17} aria-hidden />
+            {importingUrl ? "Importando..." : "Importar"}
+          </button>
+        </form>
+      </Panel>
       <Panel>
-        <form onSubmit={submit} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+        <form onSubmit={submit} className="grid gap-3 lg:grid-cols-4">
           <label>
             <span className="mb-1 block text-sm font-medium">Marketplace</span>
             <select
@@ -97,7 +182,60 @@ export default function GarimparPage() {
               className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}
-              placeholder="tenis, perfume, suplemento"
+              placeholder="ofertas, tenis, perfume"
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-sm font-medium">Prioridade</span>
+            <select
+              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
+            >
+              <option value="score">Melhor score</option>
+              <option value="discount">Maior desconto</option>
+              <option value="price">Menor preco</option>
+              <option value="rating">Melhor avaliacao</option>
+              <option value="commission">Maior comissao</option>
+            </select>
+          </label>
+          <label>
+            <span className="mb-1 block text-sm font-medium">Limite</span>
+            <input
+              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+              inputMode="numeric"
+              value={limit}
+              onChange={(event) => setLimit(event.target.value)}
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-sm font-medium">Desconto minimo</span>
+            <input
+              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+              inputMode="decimal"
+              value={minDiscount}
+              onChange={(event) => setMinDiscount(event.target.value)}
+              placeholder="0"
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-sm font-medium">Preco minimo</span>
+            <input
+              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+              inputMode="decimal"
+              value={minPrice}
+              onChange={(event) => setMinPrice(event.target.value)}
+              placeholder="50"
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-sm font-medium">Preco maximo</span>
+            <input
+              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+              inputMode="decimal"
+              value={maxPrice}
+              onChange={(event) => setMaxPrice(event.target.value)}
+              placeholder="100000"
             />
           </label>
           <button
@@ -160,4 +298,11 @@ export default function GarimparPage() {
       </div>
     </>
   );
+}
+
+function numberOrUndefined(value: string) {
+  const normalized = value.trim().replace(",", ".");
+  if (!normalized) return undefined;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
