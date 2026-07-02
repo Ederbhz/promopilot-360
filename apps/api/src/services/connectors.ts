@@ -18,6 +18,8 @@ const baseConnectorEnv: ConnectorEnv = {
   MELI_ACCESS_TOKEN: env.MELI_ACCESS_TOKEN,
   MELI_REFRESH_TOKEN: env.MELI_REFRESH_TOKEN,
   MELI_AFFILIATE_TAG: env.MELI_AFFILIATE_TAG,
+  MELI_AFFILIATE_COOKIE: env.MELI_AFFILIATE_COOKIE,
+  MELI_CSRF_TOKEN: env.MELI_CSRF_TOKEN,
   MAGALU_STORE_URL: env.MAGALU_STORE_URL
 };
 
@@ -116,7 +118,13 @@ function accountToConnectorEnv(account: {
         MELI_AFFILIATE_TAG:
           account.affiliateTag ??
           pick(credentials, "affiliateTag", "tag", "mattTool", "MELI_AFFILIATE_TAG") ??
-          pick(config, "affiliateTag", "tag", "mattTool", "MELI_AFFILIATE_TAG")
+          pick(config, "affiliateTag", "tag", "mattTool", "MELI_AFFILIATE_TAG"),
+        MELI_AFFILIATE_COOKIE:
+          pick(credentials, "affiliateCookie", "cookie", "MELI_AFFILIATE_COOKIE") ??
+          pick(config, "affiliateCookie", "cookie", "MELI_AFFILIATE_COOKIE"),
+        MELI_CSRF_TOKEN:
+          pick(credentials, "csrfToken", "xCsrfToken", "x-csrf-token", "MELI_CSRF_TOKEN") ??
+          pick(config, "csrfToken", "xCsrfToken", "x-csrf-token", "MELI_CSRF_TOKEN")
       });
     case "MAGALU":
       return compactEnv({

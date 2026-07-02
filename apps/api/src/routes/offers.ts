@@ -236,7 +236,9 @@ router.post(
       marketplaceKey: offer.marketplace.key,
       destinationUrl: offer.originalUrl
     });
-    const affiliateUrl = result.affiliateUrl ?? offer.affiliateUrl;
+    const keepExistingAffiliateUrl =
+      offer.affiliateUrl && !(offer.marketplace.key === "MERCADO_LIVRE" && !isMeliShortLink(offer.affiliateUrl));
+    const affiliateUrl = result.affiliateUrl ?? (keepExistingAffiliateUrl ? offer.affiliateUrl : null);
     const updated = await prisma.offer.update({
       where: { id: offer.id },
       data: {
@@ -253,6 +255,14 @@ router.post(
     res.json({ result, offer: updated });
   })
 );
+
+function isMeliShortLink(value: string) {
+  try {
+    return new URL(value).hostname.toLowerCase() === "meli.la";
+  } catch {
+    return false;
+  }
+}
 
 router.post(
   "/:id/generate-message",

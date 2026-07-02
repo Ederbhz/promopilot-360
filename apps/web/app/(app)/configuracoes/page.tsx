@@ -43,6 +43,7 @@ interface QuickField {
   placeholder?: string;
   target: QuickFieldTarget;
   secret?: boolean;
+  multiline?: boolean;
 }
 
 const programFields: Record<string, QuickField[]> = {
@@ -65,6 +66,8 @@ const programFields: Record<string, QuickField[]> = {
     { key: "codeVerifier", label: "Code Verifier", placeholder: "Opcional", target: "oauth", secret: true },
     { key: "accessToken", label: "Access Token", target: "credentials", secret: true },
     { key: "refreshToken", label: "Refresh Token", target: "credentials", secret: true },
+    { key: "affiliateCookie", label: "Cookie do Portal", target: "credentials", secret: true, multiline: true },
+    { key: "csrfToken", label: "X-CSRF-Token", target: "credentials", secret: true },
     { key: "affiliateTag", label: "Tag de afiliado", placeholder: "matt_tool", target: "affiliateTag" }
   ],
   MAGALU: [
@@ -340,13 +343,22 @@ export default function ConfiguracoesPage() {
                 {selectedProgramFields.map((field) => (
                   <label className="block" key={field.key}>
                     <span className="mb-1 block text-sm font-medium">{field.label}</span>
-                    <input
-                      className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                      type={field.secret ? "password" : "text"}
-                      value={quickFields[field.key] ?? ""}
-                      placeholder={field.placeholder}
-                      onChange={(event) => setQuickFields({ ...quickFields, [field.key]: event.target.value })}
-                    />
+                    {field.multiline ? (
+                      <textarea
+                        className="focus-ring min-h-[92px] w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+                        value={quickFields[field.key] ?? ""}
+                        placeholder={field.placeholder}
+                        onChange={(event) => setQuickFields({ ...quickFields, [field.key]: event.target.value })}
+                      />
+                    ) : (
+                      <input
+                        className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                        type={field.secret ? "password" : "text"}
+                        value={quickFields[field.key] ?? ""}
+                        placeholder={field.placeholder}
+                        onChange={(event) => setQuickFields({ ...quickFields, [field.key]: event.target.value })}
+                      />
+                    )}
                   </label>
                 ))}
               </div>

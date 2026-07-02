@@ -123,7 +123,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
         externalId: extractMercadoLivreId(rawProductUrl),
         title,
         productUrl,
-        affiliateUrl: this.env.MELI_AFFILIATE_TAG ? this.buildAffiliateUrl(productUrl) : undefined,
+        affiliateUrl: undefined,
         currentPrice,
         oldPrice,
         discountPercent:
@@ -155,32 +155,52 @@ export class MercadoLivreConnector implements MarketplaceConnector {
   }
 
   async generateAffiliateLink(params: GenerateAffiliateLinkParams): Promise<AffiliateLinkResult> {
-    if (this.env.MELI_AFFILIATE_TAG) {
+    const tag = this.env.MELI_AFFILIATE_TAG?.trim();
+    if (!tag) {
       return {
-        affiliateUrl: this.buildAffiliateUrl(params.destinationUrl),
-        requiresManualInput: false,
         provider: "mercado-livre",
-        metadata: { rule: "query-param-tag" }
+        requiresManualInput: true,
+        message:
+          "Nao encontrei a Tag de afiliado do Mercado Livre. Salve a tag em Configuracoes ou cole o link final no card da oferta."
       };
     }
 
-    return {
-      requiresManualInput: true,
-      provider: "mercado-livre",
-      message:
-        "Nao encontrei a Tag de afiliado do Mercado Livre (matt_tool). Salve essa tag em Configuracoes ou cole o link final no card da oferta."
-    };
+    if (!this.env.MELI_AFFILIATE_COOKIE || !this.env.MELI_CSRF_TOKEN) {
+      return {
+        provider: "mercado-livre",
+        requiresManualInput: true,
+        message:
+          "Para gerar link meli.la automaticamente, salve Cookie e X-CSRF-Token do Portal de Afiliados em Configuracoes."
+      };
+    }
+
+    try {
+      const affiliateUrl = await this.createShortAffiliateLink(params.destinationUrl, tag);
+      return {
+        affiliateUrl,
+        requiresManualInput: false,
+        provider: "mercado-livre",
+        metadata: { rule: "affiliate-program-createLink", tag }
+      };
+    } catch (error) {
+      return {
+        provider: "mercado-livre",
+        requiresManualInput: true,
+        message: error instanceof Error ? error.message : "Mercado Livre nao gerou o link meli.la."
+      };
+    }
   }
 
   async healthCheck(): Promise<ConnectorHealthResult> {
     return {
       ok: true,
-      mode: this.env.MELI_ACCESS_TOKEN ? "API" : "ASSISTED",
-      message: this.env.MELI_ACCESS_TOKEN
-        ? "Mercado Livre configurado com token de API. Se a API negar busca, a vitrine publica sera usada como fallback."
-        : this.env.MELI_AFFILIATE_TAG
-        ? "Tag configurada para links. Garimpo usa vitrine publica quando a API nao estiver disponivel."
-        : "Mercado Livre em modo assistido com garimpo pela vitrine publica de ofertas."
+      mode: this.env.MELI_AFFILIATE_COOKIE && this.env.MELI_CSRF_TOKEN ? "API" : "ASSISTED",
+      message:
+        this.env.MELI_AFFILIATE_TAG && this.env.MELI_AFFILIATE_COOKIE && this.env.MELI_CSRF_TOKEN
+          ? "Mercado Livre configurado para gerar links meli.la."
+          : this.env.MELI_AFFILIATE_TAG
+          ? "Tag configurada. Para gerar meli.la automaticamente, informe Cookie e X-CSRF-Token do Portal de Afiliados."
+          : "Mercado Livre em modo assistido com garimpo pela vitrine publica de ofertas."
     };
   }
 
@@ -196,7 +216,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
       externalId: item.id,
       title: item.title || "Oferta Mercado Livre",
       productUrl: item.permalink,
-      affiliateUrl: this.env.MELI_AFFILIATE_TAG ? this.buildAffiliateUrl(item.permalink) : undefined,
+      affiliateUrl: undefined,
       currentPrice,
       oldPrice,
       discountPercent,
@@ -218,10 +238,119 @@ export class MercadoLivreConnector implements MarketplaceConnector {
     };
   }
 
-  private buildAffiliateUrl(destinationUrl: string) {
-    const url = new URL(destinationUrl);
-    url.searchParams.set("matt_tool", this.env.MELI_AFFILIATE_TAG ?? "");
-    return url.toString();
+  private async createShortAffiliateLink(destinationUrl: string, tag: string) {
+    const cookie = await this.refreshAffiliateCookie();
+    const response = await fetch("https://www.mercadolivre.com.br/affiliate-program/api/v2/affiliates/createLink", {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/plain, */*",
+        "accept-language": "pt-BR,pt;q=0.9,en;q=0.7",
+        "content-type": "application/json",
+        cookie,
+        origin: "https://www.mercadolivre.com.br",
+        referer: "https://www.mercadolivre.com.br/afiliados/linkbuilder",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36",
+        "x-csrf-token": this.env.MELI_CSRF_TOKEN ?? ""
+      },
+      body: JSON.stringify({ urls: [destinationUrl], tag })
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      const details = extractMessageFromText(text);
+      throw new Error(
+        `Mercado Livre recusou a geracao do meli.la (${response.status}). Atualize Cookie e X-CSRF-Token nas configuracoes.${details ? ` Detalhe: ${details}` : ""}`
+      );
+    }
+
+    const affiliateUrl = extractMeliShortLink(text);
+    if (!affiliateUrl) {
+      throw new Error("Mercado Livre respondeu sem link meli.la. Atualize Cookie e X-CSRF-Token e tente novamente.");
+    }
+    return affiliateUrl;
+  }
+
+  private async refreshAffiliateCookie() {
+    const baseCookie = this.env.MELI_AFFILIATE_COOKIE ?? "";
+    const response = await fetch("https://www.mercadolivre.com.br/afiliados/linkbuilder", {
+      headers: {
+        accept: "text/html,application/xhtml+xml",
+        cookie: baseCookie,
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
+      }
+    }).catch(() => null);
+
+    const setCookie = response?.headers.get("set-cookie") ?? "";
+    return mergeCookieHeader(baseCookie, setCookie);
+  }
+}
+
+function mergeCookieHeader(cookie: string, setCookieHeader: string) {
+  const cookieMap = new Map<string, string>();
+  for (const part of cookie.split(";")) {
+    const [rawKey, ...rawValue] = part.trim().split("=");
+    if (rawKey && rawValue.length) cookieMap.set(rawKey, rawValue.join("="));
+  }
+
+  for (const part of splitSetCookieHeader(setCookieHeader)) {
+    const first = part.split(";")[0]?.trim();
+    if (!first) continue;
+    const [rawKey, ...rawValue] = first.split("=");
+    if (rawKey && rawValue.length) cookieMap.set(rawKey, rawValue.join("="));
+  }
+
+  return [...cookieMap.entries()].map(([key, value]) => `${key}=${value}`).join("; ");
+}
+
+function splitSetCookieHeader(value: string) {
+  if (!value) return [];
+  return value.split(/,(?=\s*[^;,]+=)/g);
+}
+
+function extractMeliShortLink(text: string) {
+  const direct = text.match(/https?:\/\/meli\.la\/[A-Za-z0-9_-]+/i)?.[0];
+  if (direct) return direct;
+
+  try {
+    const payload = JSON.parse(text) as unknown;
+    return findMeliShortLink(payload);
+  } catch {
+    return undefined;
+  }
+}
+
+function findMeliShortLink(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const normalized = value.startsWith("meli.la/") ? `https://${value}` : value;
+    return normalized.match(/^https?:\/\/meli\.la\/[A-Za-z0-9_-]+/i)?.[0];
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findMeliShortLink(item);
+      if (found) return found;
+    }
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value)) {
+      const found = findMeliShortLink(item);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+function extractMessageFromText(text: string) {
+  if (!text) return "";
+  try {
+    const payload = JSON.parse(text) as Record<string, unknown>;
+    const message = payload.message ?? payload.error_description ?? payload.error;
+    return typeof message === "string" ? message.slice(0, 180) : "";
+  } catch {
+    return text.replace(/\s+/g, " ").slice(0, 180);
   }
 }
 

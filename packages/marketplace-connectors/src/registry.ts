@@ -18,6 +18,8 @@ export interface ConnectorEnv {
   MELI_ACCESS_TOKEN?: string;
   MELI_REFRESH_TOKEN?: string;
   MELI_AFFILIATE_TAG?: string;
+  MELI_AFFILIATE_COOKIE?: string;
+  MELI_CSRF_TOKEN?: string;
   MAGALU_STORE_URL?: string;
 }
 

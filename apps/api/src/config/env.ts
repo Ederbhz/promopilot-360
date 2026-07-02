@@ -29,6 +29,8 @@ const envSchema = z.object({
   MELI_ACCESS_TOKEN: z.string().optional(),
   MELI_REFRESH_TOKEN: z.string().optional(),
   MELI_AFFILIATE_TAG: z.string().optional(),
+  MELI_AFFILIATE_COOKIE: z.string().optional(),
+  MELI_CSRF_TOKEN: z.string().optional(),
   MAGALU_STORE_URL: z.string().optional(),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_DEFAULT_CHAT_ID: z.string().optional(),
