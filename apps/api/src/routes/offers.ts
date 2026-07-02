@@ -294,6 +294,14 @@ router.post(
 async function persistCandidate(candidate: OfferCandidate) {
   const key = (candidate.marketplaceKey || "MANUAL") as MarketplaceKey;
   const marketplace = await ensureMarketplace(key);
+  const productRating = normalizeNumber(candidate.rating, 0, 5);
+  const productReviewCount = normalizeInteger(candidate.reviewCount, 0);
+  const currentPrice = normalizeNumber(candidate.currentPrice, 0, 9999999999.99);
+  const oldPrice = normalizeNumber(candidate.oldPrice, 0, 9999999999.99);
+  const discountPercent = normalizeNumber(candidate.discountPercent, 0, 100);
+  const estimatedCommission = normalizeNumber(candidate.estimatedCommission, 0, 9999999999.99);
+  const commissionPercent = normalizeNumber(candidate.commissionPercent, 0, 999.99);
+  const score = normalizeNumber(candidate.score ?? calculateOfferScore(candidate), 0, 999.99);
   const existingProduct = await prisma.product.findFirst({
     where: {
       marketplaceId: marketplace.id,
@@ -309,8 +317,8 @@ async function persistCandidate(candidate: OfferCandidate) {
           imageUrl: candidate.imageUrl,
           brand: candidate.brand,
           category: candidate.category,
-          rating: candidate.rating,
-          reviewCount: candidate.reviewCount,
+          rating: productRating,
+          reviewCount: productReviewCount,
           externalId: candidate.externalId
         }
       })
@@ -324,32 +332,43 @@ async function persistCandidate(candidate: OfferCandidate) {
           productUrl: candidate.productUrl,
           brand: candidate.brand,
           category: candidate.category,
-          rating: candidate.rating,
-          reviewCount: candidate.reviewCount
+          rating: productRating,
+          reviewCount: productReviewCount
         }
       });
 
-  const score = candidate.score ?? calculateOfferScore(candidate);
   return prisma.offer.create({
     data: {
       productId: product.id,
       marketplaceId: marketplace.id,
       originalUrl: candidate.productUrl,
       affiliateUrl: candidate.affiliateUrl,
-      currentPrice: candidate.currentPrice,
-      oldPrice: candidate.oldPrice,
-      discountPercent: candidate.discountPercent,
+      currentPrice,
+      oldPrice,
+      discountPercent,
       couponCode: candidate.couponCode,
       couponDescription: candidate.couponDescription,
       freeShipping: candidate.freeShipping,
-      estimatedCommission: candidate.estimatedCommission,
-      commissionPercent: candidate.commissionPercent,
+      estimatedCommission,
+      commissionPercent,
       score,
       status: candidate.affiliateUrl ? OfferStatus.VALID : OfferStatus.AFFILIATE_LINK_MISSING,
       metadata: jsonInput(candidate.metadata)
     },
     include: { product: true, marketplace: true }
   });
+}
+
+function normalizeNumber(value: unknown, min: number, max: number) {
+  if (value === null || value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.min(Math.max(parsed, min), max);
+}
+
+function normalizeInteger(value: unknown, min: number) {
+  const normalized = normalizeNumber(value, min, Number.MAX_SAFE_INTEGER);
+  return normalized === undefined ? undefined : Math.round(normalized);
 }
 
 async function ensureMarketplace(key: MarketplaceKey) {

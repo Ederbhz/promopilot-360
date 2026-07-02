@@ -276,7 +276,9 @@ function parseBrazilianNumber(value: string): number | undefined {
 }
 
 function parseDecimal(value: string): number | undefined {
-  return parseBrazilianNumber(value);
+  const normalized = cleanText(value).replace(/[^\d,.-]/g, "").replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function parseInteger(value: string): number | undefined {
