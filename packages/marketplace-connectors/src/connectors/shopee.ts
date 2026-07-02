@@ -16,7 +16,9 @@ export class ShopeeConnector implements MarketplaceConnector {
   constructor(private readonly env: ConnectorEnv) {}
 
   async searchOffers(_params: SearchOffersParams): Promise<OfferCandidate[]> {
-    return [];
+    throw new Error(
+      "Shopee nao libera busca publica confiavel para este conector. Use Link do produto + Link afiliado final ou habilite a Affiliate Open API oficial quando a conta tiver endpoint de ofertas liberado."
+    );
   }
 
   async extractFromUrl(url: string): Promise<ProductExtractionResult> {

@@ -13,7 +13,10 @@ const baseConnectorEnv: ConnectorEnv = {
   SHOPEE_APP_SECRET: env.SHOPEE_APP_SECRET,
   SHOPEE_AFFILIATE_ID: env.SHOPEE_AFFILIATE_ID,
   SHOPEE_API_BASE_URL: env.SHOPEE_API_BASE_URL,
+  MELI_CLIENT_ID: env.MELI_CLIENT_ID,
+  MELI_CLIENT_SECRET: env.MELI_CLIENT_SECRET,
   MELI_ACCESS_TOKEN: env.MELI_ACCESS_TOKEN,
+  MELI_REFRESH_TOKEN: env.MELI_REFRESH_TOKEN,
   MELI_AFFILIATE_TAG: env.MELI_AFFILIATE_TAG,
   MAGALU_STORE_URL: env.MAGALU_STORE_URL
 };
@@ -92,9 +95,19 @@ function accountToConnectorEnv(account: {
       };
     case "MERCADO_LIVRE":
       return {
+        MELI_CLIENT_ID:
+          account.accountIdentifier ??
+          pick(credentials, "clientId", "appId", "MELI_CLIENT_ID") ??
+          pick(config, "clientId", "appId", "MELI_CLIENT_ID"),
+        MELI_CLIENT_SECRET:
+          pick(credentials, "clientSecret", "appSecret", "MELI_CLIENT_SECRET") ??
+          pick(config, "clientSecret", "appSecret", "MELI_CLIENT_SECRET"),
         MELI_ACCESS_TOKEN:
           pick(credentials, "accessToken", "token", "MELI_ACCESS_TOKEN") ??
           pick(config, "accessToken", "token", "MELI_ACCESS_TOKEN"),
+        MELI_REFRESH_TOKEN:
+          pick(credentials, "refreshToken", "refresh_token", "MELI_REFRESH_TOKEN") ??
+          pick(config, "refreshToken", "refresh_token", "MELI_REFRESH_TOKEN"),
         MELI_AFFILIATE_TAG:
           account.affiliateTag ??
           pick(credentials, "affiliateTag", "tag", "mattTool", "MELI_AFFILIATE_TAG") ??

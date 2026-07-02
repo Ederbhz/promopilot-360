@@ -17,6 +17,12 @@ export class MercadoLivreConnector implements MarketplaceConnector {
   constructor(private readonly env: ConnectorEnv) {}
 
   async searchOffers(params: SearchOffersParams): Promise<OfferCandidate[]> {
+    if (!this.env.MELI_ACCESS_TOKEN) {
+      throw new Error(
+        "Mercado Livre exige Access Token OAuth para garimpo automatico. Gere o token em Configuracoes ou importe pelo link do produto."
+      );
+    }
+
     const keyword = params.keyword || params.category || "ofertas";
     const limit = Math.min(params.limit ?? 20, 50);
     const searchUrl = new URL("https://api.mercadolibre.com/sites/MLB/search");
@@ -31,7 +37,16 @@ export class MercadoLivreConnector implements MarketplaceConnector {
         "user-agent": "PromoPilot360/0.1"
       }
     });
-    if (!response.ok) throw new Error(`Mercado Livre respondeu ${response.status} ao buscar ofertas.`);
+    if (!response.ok) {
+      const details = await readErrorDetails(response);
+      const suffix = details ? ` Detalhe: ${details}` : "";
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(
+          `Mercado Livre respondeu ${response.status} ao buscar ofertas. Verifique se o Access Token OAuth esta ativo e pertence ao app autorizado; login no navegador nao autoriza o Render.${suffix}`
+        );
+      }
+      throw new Error(`Mercado Livre respondeu ${response.status} ao buscar ofertas.${suffix}`);
+    }
 
     const payload = (await response.json()) as MercadoLivreSearchResponse;
     const candidates = payload.results.map((item) => this.toOfferCandidate(item)).filter((candidate) => {
@@ -74,8 +89,8 @@ export class MercadoLivreConnector implements MarketplaceConnector {
       message: this.env.MELI_ACCESS_TOKEN
         ? "Mercado Livre configurado com token de API."
         : this.env.MELI_AFFILIATE_TAG
-        ? "Regra de tag configurada. Valide o padrao oficial da conta antes de publicar."
-        : "Modo assistido recomendado para Mercado Livre."
+        ? "Tag configurada para links. Garimpo automatico precisa de Access Token OAuth."
+        : "Mercado Livre precisa de Access Token OAuth para garimpo automatico."
     };
   }
 
@@ -117,6 +132,19 @@ export class MercadoLivreConnector implements MarketplaceConnector {
     const url = new URL(destinationUrl);
     url.searchParams.set("matt_tool", this.env.MELI_AFFILIATE_TAG ?? "");
     return url.toString();
+  }
+}
+
+async function readErrorDetails(response: Response) {
+  const text = await response.text().catch(() => "");
+  if (!text) return "";
+
+  try {
+    const payload = JSON.parse(text) as Record<string, unknown>;
+    const message = payload.message ?? payload.error_description ?? payload.error;
+    return typeof message === "string" ? message.slice(0, 180) : "";
+  } catch {
+    return text.replace(/\s+/g, " ").slice(0, 180);
   }
 }
 

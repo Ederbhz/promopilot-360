@@ -67,10 +67,13 @@ export default function GarimparPage() {
         sortBy
       });
       setOffers(result.offers);
+      const warnings = result.warnings ?? [];
       setMessage(
         [
-          `${result.count} ofertas importadas.`,
-          ...(result.warnings ?? []).map((warning) => `${warning.marketplaceKey}: ${warning.message}`)
+          result.count
+            ? `${result.count} ofertas importadas.`
+            : "Nenhuma oferta importada automaticamente. Use o importador por link quando o marketplace bloquear busca publica.",
+          ...warnings.map((warning) => `${warning.marketplaceKey}: ${warning.message}`)
         ].join(" ")
       );
     } catch (err) {

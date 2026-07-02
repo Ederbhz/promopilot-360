@@ -16,7 +16,9 @@ export class MagaluConnector implements MarketplaceConnector {
   constructor(private readonly env: ConnectorEnv) {}
 
   async searchOffers(_params: SearchOffersParams): Promise<OfferCandidate[]> {
-    return [];
+    throw new Error(
+      "Magalu bloqueia busca publica fora do navegador neste conector. Use Link do produto + Link afiliado final enquanto nao houver feed/API oficial configurado."
+    );
   }
 
   async extractFromUrl(url: string): Promise<ProductExtractionResult> {

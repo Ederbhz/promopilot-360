@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { PlugZap, Save, ShieldCheck } from "lucide-react";
+import { ExternalLink, KeyRound, PlugZap, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import { ErrorLine } from "@/components/AsyncState";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
@@ -27,7 +27,15 @@ interface AffiliateAccount {
   marketplace: { id: string; name: string; key: string };
 }
 
-type QuickFieldTarget = "credentials" | "config" | "accountIdentifier" | "affiliateTag";
+interface MercadoLivreTokenResponse {
+  accessToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  tokenType?: string;
+  userId?: string;
+}
+
+type QuickFieldTarget = "credentials" | "config" | "accountIdentifier" | "affiliateTag" | "oauth";
 
 interface QuickField {
   key: string;
@@ -50,7 +58,13 @@ const programFields: Record<string, QuickField[]> = {
     { key: "apiBaseUrl", label: "URL da API", placeholder: "Opcional", target: "config" }
   ],
   MERCADO_LIVRE: [
+    { key: "clientId", label: "App ID", target: "accountIdentifier" },
+    { key: "clientSecret", label: "Client Secret", target: "credentials", secret: true },
+    { key: "redirectUri", label: "Redirect URI", target: "config" },
+    { key: "authorizationCode", label: "Codigo de autorizacao", target: "oauth" },
+    { key: "codeVerifier", label: "Code Verifier", placeholder: "Opcional", target: "oauth", secret: true },
     { key: "accessToken", label: "Access Token", target: "credentials", secret: true },
+    { key: "refreshToken", label: "Refresh Token", target: "credentials", secret: true },
     { key: "affiliateTag", label: "Tag de afiliado", placeholder: "matt_tool", target: "affiliateTag" }
   ],
   MAGALU: [
@@ -143,6 +157,100 @@ export default function ConfiguracoesPage() {
     setMessage(result.message || (result.ok ? "Conexao ativa." : "Conexao em modo assistido."));
   }
 
+  async function openMercadoLivreAuthorization() {
+    setError("");
+    setMessage("");
+    const clientId = quickFields.clientId?.trim();
+    const redirectUri = quickFields.redirectUri?.trim();
+    if (!clientId || !redirectUri) {
+      setError("Informe App ID e Redirect URI do Mercado Livre.");
+      return;
+    }
+
+    const popup = window.open("about:blank", "_blank");
+    if (popup) popup.opener = null;
+    try {
+      const result = await postJson<{ url: string }>("/affiliate-accounts/mercado-livre/oauth-url", {
+        clientId,
+        redirectUri
+      });
+      if (popup) {
+        popup.location.href = result.url;
+      } else {
+        window.location.href = result.url;
+      }
+      setMessage("Autorizacao do Mercado Livre aberta. Depois cole aqui o codigo recebido.");
+    } catch (err) {
+      popup?.close();
+      setError(err instanceof Error ? err.message : "Falha ao abrir autorizacao do Mercado Livre.");
+    }
+  }
+
+  async function exchangeMercadoLivreCode() {
+    setError("");
+    setMessage("");
+    const clientId = quickFields.clientId?.trim();
+    const clientSecret = quickFields.clientSecret?.trim();
+    const redirectUri = quickFields.redirectUri?.trim();
+    const code = quickFields.authorizationCode?.trim();
+    if (!clientId || !clientSecret || !redirectUri || !code) {
+      setError("Informe App ID, Client Secret, Redirect URI e Codigo de autorizacao.");
+      return;
+    }
+
+    try {
+      const result = await postJson<MercadoLivreTokenResponse>("/affiliate-accounts/mercado-livre/exchange-token", {
+        clientId,
+        clientSecret,
+        redirectUri,
+        code,
+        codeVerifier: quickFields.codeVerifier?.trim() || undefined
+      });
+      if (!result.accessToken) throw new Error("Mercado Livre nao retornou Access Token.");
+      setQuickFields((current) => ({
+        ...current,
+        accessToken: result.accessToken ?? current.accessToken ?? "",
+        refreshToken: result.refreshToken ?? current.refreshToken ?? ""
+      }));
+      setMessage(
+        result.expiresIn
+          ? `Token Mercado Livre recebido. Expira em ${Math.round(result.expiresIn / 60)} minutos. Salve a conta.`
+          : "Token Mercado Livre recebido. Salve a conta."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao trocar codigo do Mercado Livre.");
+    }
+  }
+
+  async function refreshMercadoLivreToken() {
+    setError("");
+    setMessage("");
+    const clientId = quickFields.clientId?.trim();
+    const clientSecret = quickFields.clientSecret?.trim();
+    const refreshToken = quickFields.refreshToken?.trim();
+    if (!clientId || !clientSecret || !refreshToken) {
+      setError("Informe App ID, Client Secret e Refresh Token.");
+      return;
+    }
+
+    try {
+      const result = await postJson<MercadoLivreTokenResponse>("/affiliate-accounts/mercado-livre/refresh-token", {
+        clientId,
+        clientSecret,
+        refreshToken
+      });
+      if (!result.accessToken) throw new Error("Mercado Livre nao retornou Access Token.");
+      setQuickFields((current) => ({
+        ...current,
+        accessToken: result.accessToken ?? current.accessToken ?? "",
+        refreshToken: result.refreshToken ?? current.refreshToken ?? ""
+      }));
+      setMessage("Token Mercado Livre atualizado. Salve a conta.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao atualizar token do Mercado Livre.");
+    }
+  }
+
   return (
     <>
       <PageHeader title="Configuracoes de afiliado" eyebrow="Credenciais" />
@@ -177,7 +285,7 @@ export default function ConfiguracoesPage() {
                 value={form.marketplaceId}
                 onChange={(event) => {
                   const marketplace = marketplaces.find((item) => item.id === event.target.value);
-                  setQuickFields({});
+                  setQuickFields(marketplace?.key === "MERCADO_LIVRE" ? { redirectUri: getDefaultRedirectUri() } : {});
                   setForm({
                     ...form,
                     marketplaceId: event.target.value,
@@ -215,6 +323,34 @@ export default function ConfiguracoesPage() {
                     />
                   </label>
                 ))}
+              </div>
+            ) : null}
+            {selectedMarketplace?.key === "MERCADO_LIVRE" ? (
+              <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
+                <button
+                  className="focus-ring flex items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist"
+                  onClick={openMercadoLivreAuthorization}
+                  type="button"
+                >
+                  <ExternalLink size={16} aria-hidden />
+                  Abrir autorizacao
+                </button>
+                <button
+                  className="focus-ring flex items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist"
+                  onClick={exchangeMercadoLivreCode}
+                  type="button"
+                >
+                  <KeyRound size={16} aria-hidden />
+                  Trocar codigo
+                </button>
+                <button
+                  className="focus-ring flex items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist"
+                  onClick={refreshMercadoLivreToken}
+                  type="button"
+                >
+                  <RefreshCw size={16} aria-hidden />
+                  Atualizar token
+                </button>
               </div>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
@@ -290,6 +426,11 @@ function parseJson(value: string) {
   const trimmed = value.trim();
   if (!trimmed || trimmed === "{}") return undefined;
   return JSON.parse(trimmed) as Record<string, unknown>;
+}
+
+function getDefaultRedirectUri() {
+  if (typeof window === "undefined") return "";
+  return window.location.href.split(/[?#]/)[0] ?? "";
 }
 
 function buildProgramPayload(input: {
