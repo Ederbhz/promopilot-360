@@ -24,6 +24,7 @@ router.get(
       where: { status },
       include: {
         campaign: true,
+        whatsappGroup: true,
         offer: { include: { product: true, marketplace: true } }
       },
       orderBy: { scheduledAt: "asc" },
@@ -49,6 +50,7 @@ router.get(
       where: { id: req.params.id },
       include: {
         campaign: true,
+        whatsappGroup: true,
         offer: { include: { product: true, marketplace: true } },
         publishLogs: { orderBy: { createdAt: "desc" } }
       }
@@ -70,7 +72,7 @@ router.put(
 router.post(
   "/:id/publish-now",
   asyncHandler(async (req, res) => {
-    const post = await publishScheduledPost(req.params.id!);
+    const post = await publishScheduledPost(req.params.id!, { force: true });
     res.json(post);
   })
 );

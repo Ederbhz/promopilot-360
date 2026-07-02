@@ -34,6 +34,7 @@ const envSchema = z.object({
   MAGALU_STORE_URL: z.string().optional(),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_DEFAULT_CHAT_ID: z.string().optional(),
+  WHATSAPP_GRAPH_VERSION: z.string().default("v23.0"),
   SHORT_LINK_DOMAIN: z.string().default("http://localhost:4000/r"),
   DISABLE_WORKERS: z.string().optional()
 });

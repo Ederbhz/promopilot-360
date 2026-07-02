@@ -21,7 +21,8 @@ const campaignSchema = z.object({
   requireManualApproval: z.boolean().default(true),
   allowRepost: z.boolean().default(false),
   minHoursToRepost: z.coerce.number().int().min(1).default(72),
-  config: z.record(z.unknown()).optional()
+  config: z.record(z.unknown()).optional(),
+  whatsappGroupIds: z.array(z.string().uuid()).optional()
 });
 
 router.get(
@@ -31,6 +32,7 @@ router.get(
       include: {
         marketplace: true,
         template: true,
+        whatsappGroups: { include: { group: true } },
         _count: { select: { scheduledPosts: true } }
       },
       orderBy: { createdAt: "desc" }
@@ -59,7 +61,9 @@ router.post(
       config: jsonInput(data.config)
     };
     const campaign = await prisma.campaign.create({ data: createData });
-    res.status(201).json(campaign);
+    await setCampaignWhatsAppGroups(campaign.id, data.whatsappGroupIds ?? []);
+    const created = await findCampaign(campaign.id);
+    res.status(201).json(created);
   })
 );
 
@@ -71,6 +75,7 @@ router.get(
       include: {
         marketplace: true,
         template: true,
+        whatsappGroups: { include: { group: true } },
         scheduledPosts: {
           include: { offer: { include: { product: true, marketplace: true } } },
           orderBy: { scheduledAt: "desc" },
@@ -86,6 +91,7 @@ router.get(
 router.put(
   "/:id",
   asyncHandler(async (req, res) => {
+    const campaignId = req.params.id!;
     const data = campaignSchema.partial().parse(req.body);
     const updateData: Prisma.CampaignUncheckedUpdateInput = {
       name: data.name,
@@ -102,7 +108,9 @@ router.put(
       minHoursToRepost: data.minHoursToRepost,
       config: jsonInput(data.config)
     };
-    const campaign = await prisma.campaign.update({ where: { id: req.params.id }, data: updateData });
+    await prisma.campaign.update({ where: { id: campaignId }, data: updateData });
+    if (data.whatsappGroupIds) await setCampaignWhatsAppGroups(campaignId, data.whatsappGroupIds);
+    const campaign = await findCampaign(campaignId);
     res.json(campaign);
   })
 );
@@ -119,7 +127,10 @@ router.patch(
 router.post(
   "/:id/preview-next-posts",
   asyncHandler(async (req, res) => {
-    const campaign = await prisma.campaign.findUnique({ where: { id: req.params.id } });
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: req.params.id },
+      include: { whatsappGroups: true }
+    });
     if (!campaign) throw new HttpError(404, "Campanha nao encontrada.");
     const limit = z.coerce.number().int().min(1).max(20).default(5).parse(req.body?.limit ?? 5);
     res.json({ schedule: buildSchedule(new Date(), campaign.intervalMinutes, limit) });
@@ -143,25 +154,28 @@ router.post(
       take: limit
     });
 
-    const schedule = buildSchedule(new Date(), campaign.intervalMinutes, offers.length);
+    const schedule = buildSchedule(new Date(), campaign.intervalMinutes, offers.length, campaign.startTime, campaign.endTime);
+    const groupIds = getCampaignWhatsAppGroupIds(campaign);
     const scheduled = [];
     for (const [index, offer] of offers.entries()) {
       const rendered = await renderOfferMessage(offer.id, campaign.channel, campaign.templateId ?? undefined);
-      scheduled.push(
-        await prisma.scheduledPost.create({
-          data: {
-            campaignId: campaign.id,
-            offerId: offer.id,
-            channel: campaign.channel,
-            message: rendered.message,
-            scheduledAt: schedule[index]!,
-            status:
-              campaign.requireManualApproval || campaign.channel === Channel.WHATSAPP
+      for (const groupId of groupIds) {
+        scheduled.push(
+          await prisma.scheduledPost.create({
+            data: {
+              campaignId: campaign.id,
+              offerId: offer.id,
+              whatsappGroupId: groupId,
+              channel: campaign.channel,
+              message: rendered.message,
+              scheduledAt: schedule[index]!,
+              status: shouldHoldForApproval(campaign, groupId)
                 ? ScheduledPostStatus.READY_TO_SEND
                 : ScheduledPostStatus.SCHEDULED
-          }
-        })
-      );
+            }
+          })
+        );
+      }
       await prisma.offer.update({
         where: { id: offer.id },
         data: { status: OfferStatus.SCHEDULED }
@@ -176,7 +190,10 @@ router.post(
   "/:id/add-offer",
   asyncHandler(async (req, res) => {
     const data = z.object({ offerId: z.string().uuid() }).parse(req.body ?? {});
-    const campaign = await prisma.campaign.findUnique({ where: { id: req.params.id } });
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: req.params.id },
+      include: { whatsappGroups: true }
+    });
     if (!campaign) throw new HttpError(404, "Campanha nao encontrada.");
 
     const offer = await prisma.offer.findUnique({
@@ -192,24 +209,30 @@ router.post(
     }
 
     const rendered = await renderOfferMessage(offer.id, campaign.channel, campaign.templateId ?? undefined);
-    const scheduledAt = await nextCampaignSlot(campaign.id, campaign.intervalMinutes);
-    const scheduled = await prisma.scheduledPost.create({
-      data: {
-        campaignId: campaign.id,
-        offerId: offer.id,
-        channel: campaign.channel,
-        message: rendered.message,
-        scheduledAt,
-        status:
-          campaign.requireManualApproval || campaign.channel === Channel.WHATSAPP
-            ? ScheduledPostStatus.READY_TO_SEND
-            : ScheduledPostStatus.SCHEDULED
-      },
-      include: {
-        campaign: true,
-        offer: { include: { product: true, marketplace: true } }
-      }
-    });
+    const scheduledAt = await nextCampaignSlot(campaign.id, campaign.intervalMinutes, campaign.startTime, campaign.endTime);
+    const scheduled = [];
+    for (const groupId of getCampaignWhatsAppGroupIds(campaign)) {
+      scheduled.push(
+        await prisma.scheduledPost.create({
+          data: {
+            campaignId: campaign.id,
+            offerId: offer.id,
+            whatsappGroupId: groupId,
+            channel: campaign.channel,
+            message: rendered.message,
+            scheduledAt,
+            status: shouldHoldForApproval(campaign, groupId)
+              ? ScheduledPostStatus.READY_TO_SEND
+              : ScheduledPostStatus.SCHEDULED
+          },
+          include: {
+            campaign: true,
+            whatsappGroup: true,
+            offer: { include: { product: true, marketplace: true } }
+          }
+        })
+      );
+    }
     const updatedOffer = await prisma.offer.update({
       where: { id: offer.id },
       data: { status: OfferStatus.SCHEDULED },
@@ -220,15 +243,82 @@ router.post(
   })
 );
 
-function buildSchedule(start: Date, intervalMinutes: number, limit: number) {
-  return Array.from({ length: limit }, (_item, index) => {
-    const date = new Date(start);
-    date.setMinutes(date.getMinutes() + intervalMinutes * index);
-    return date;
+async function findCampaign(id: string) {
+  return prisma.campaign.findUnique({
+    where: { id },
+    include: {
+      marketplace: true,
+      template: true,
+      whatsappGroups: { include: { group: true } },
+      _count: { select: { scheduledPosts: true } }
+    }
   });
 }
 
-async function nextCampaignSlot(campaignId: string, intervalMinutes: number) {
+async function setCampaignWhatsAppGroups(campaignId: string, groupIds: string[]) {
+  await prisma.campaignWhatsAppGroup.deleteMany({ where: { campaignId } });
+  if (!groupIds.length) return;
+  await prisma.campaignWhatsAppGroup.createMany({
+    data: [...new Set(groupIds)].map((groupId) => ({ campaignId, groupId })),
+    skipDuplicates: true
+  });
+}
+
+function getCampaignWhatsAppGroupIds(campaign: { channel: Channel; whatsappGroups?: Array<{ groupId: string }> }) {
+  if (campaign.channel !== Channel.WHATSAPP) return [null];
+  const groupIds = campaign.whatsappGroups?.map((item) => item.groupId) ?? [];
+  return groupIds.length ? groupIds : [null];
+}
+
+function shouldHoldForApproval(campaign: { requireManualApproval: boolean; channel: Channel }, groupId: string | null) {
+  return campaign.requireManualApproval || (campaign.channel === Channel.WHATSAPP && !groupId);
+}
+
+function buildSchedule(start: Date, intervalMinutes: number, limit: number, startTime?: string | null, endTime?: string | null) {
+  const schedule: Date[] = [];
+  let cursor = nextAllowedSlot(start, startTime, endTime);
+  for (let index = 0; index < limit; index += 1) {
+    schedule.push(new Date(cursor));
+    cursor = new Date(cursor.getTime() + intervalMinutes * 60_000);
+    cursor = nextAllowedSlot(cursor, startTime, endTime);
+  }
+  return schedule;
+}
+
+function nextAllowedSlot(date: Date, startTime?: string | null, endTime?: string | null) {
+  if (!startTime || !endTime) return new Date(date);
+  const startMinutes = parseTime(startTime);
+  const endMinutes = parseTime(endTime);
+  if (startMinutes === undefined || endMinutes === undefined || endMinutes <= startMinutes) return new Date(date);
+
+  const result = new Date(date);
+  const currentMinutes = result.getHours() * 60 + result.getMinutes();
+  if (currentMinutes < startMinutes) {
+    result.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
+    return result;
+  }
+  if (currentMinutes > endMinutes) {
+    result.setDate(result.getDate() + 1);
+    result.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0);
+  }
+  return result;
+}
+
+function parseTime(value: string) {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return undefined;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return undefined;
+  return hours * 60 + minutes;
+}
+
+async function nextCampaignSlot(
+  campaignId: string,
+  intervalMinutes: number,
+  startTime?: string | null,
+  endTime?: string | null
+) {
   const lastPost = await prisma.scheduledPost.findFirst({
     where: {
       campaignId,
@@ -239,7 +329,7 @@ async function nextCampaignSlot(campaignId: string, intervalMinutes: number) {
   const base = lastPost && lastPost.scheduledAt > new Date() ? lastPost.scheduledAt : new Date();
   const next = new Date(base);
   if (lastPost) next.setMinutes(next.getMinutes() + intervalMinutes);
-  return next;
+  return nextAllowedSlot(next, startTime, endTime);
 }
 
 export default router;

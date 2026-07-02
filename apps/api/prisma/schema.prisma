@@ -60,6 +60,19 @@ enum ScheduledPostStatus {
   CANCELED
 }
 
+enum WhatsAppProvider {
+  CLOUD_API
+  WASSENGER
+  WEBHOOK
+  ASSISTED
+}
+
+enum WhatsAppConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  WARNING
+}
+
 model User {
   id           String   @id @default(uuid())
   name         String   @db.VarChar(150)
@@ -185,6 +198,7 @@ model Campaign {
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   scheduledPosts        ScheduledPost[]
+  whatsappGroups        CampaignWhatsAppGroup[]
 }
 
 model ScheduledPost {
@@ -193,6 +207,8 @@ model ScheduledPost {
   campaign      Campaign?           @relation(fields: [campaignId], references: [id])
   offerId       String
   offer         Offer               @relation(fields: [offerId], references: [id])
+  whatsappGroupId String?
+  whatsappGroup WhatsAppGroup?      @relation(fields: [whatsappGroupId], references: [id])
   channel       Channel
   message       String
   scheduledAt   DateTime
@@ -205,6 +221,50 @@ model ScheduledPost {
   publishLogs   PublishLog[]
 
   @@index([status, scheduledAt])
+  @@index([whatsappGroupId])
+}
+
+model WhatsAppConnection {
+  id                   String                  @id @default(uuid())
+  name                 String                  @db.VarChar(120)
+  phoneNumber          String?                 @db.VarChar(40)
+  provider             WhatsAppProvider        @default(CLOUD_API)
+  status               WhatsAppConnectionStatus @default(DISCONNECTED)
+  phoneNumberId        String?                 @db.VarChar(120)
+  encryptedCredentials Json?
+  config               Json?
+  isActive             Boolean                 @default(true)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  groups               WhatsAppGroup[]
+}
+
+model WhatsAppGroup {
+  id           String                  @id @default(uuid())
+  connectionId String
+  connection   WhatsAppConnection      @relation(fields: [connectionId], references: [id])
+  name         String                  @db.VarChar(160)
+  externalId   String                  @db.VarChar(220)
+  type         String                  @default("GROUP") @db.VarChar(40)
+  isActive     Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  campaigns    CampaignWhatsAppGroup[]
+  scheduledPosts ScheduledPost[]
+
+  @@index([connectionId])
+  @@unique([connectionId, externalId])
+}
+
+model CampaignWhatsAppGroup {
+  campaignId String
+  campaign   Campaign      @relation(fields: [campaignId], references: [id])
+  groupId    String
+  group      WhatsAppGroup @relation(fields: [groupId], references: [id])
+  createdAt  DateTime      @default(now())
+
+  @@id([campaignId, groupId])
+  @@index([groupId])
 }
 
 model PublishLog {

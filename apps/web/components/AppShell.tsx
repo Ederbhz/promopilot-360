@@ -10,6 +10,7 @@ import {
   Link2,
   LogOut,
   Megaphone,
+  MessageCircle,
   Search,
   Settings,
   Sparkles
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/links-manuais", label: "Links", icon: Link2 },
   { href: "/campanhas", label: "Campanhas", icon: Megaphone },
   { href: "/agendador", label: "Agendador", icon: CalendarClock },
+  { href: "/whatsapp", label: "WhatsApp", icon: MessageCircle },
   { href: "/templates", label: "Templates", icon: ClipboardList },
   { href: "/configuracoes", label: "Afiliado", icon: Settings },
   { href: "/relatorios", label: "Relatorios", icon: BarChart3 }

@@ -9,6 +9,7 @@ import campaignRoutes from "./campaigns.js";
 import scheduledPostRoutes from "./scheduled-posts.js";
 import channelRoutes from "./channels.js";
 import reportRoutes from "./reports.js";
+import whatsappRoutes from "./whatsapp.js";
 
 const router = Router();
 
@@ -21,5 +22,6 @@ router.use("/campaigns", requireAuth, campaignRoutes);
 router.use("/scheduled-posts", requireAuth, scheduledPostRoutes);
 router.use("/channels", requireAuth, channelRoutes);
 router.use("/reports", requireAuth, reportRoutes);
+router.use("/whatsapp", requireAuth, whatsappRoutes);
 
 export default router;

@@ -17,6 +17,7 @@ interface ScheduledPost {
   status: string;
   errorMessage?: string | null;
   campaign?: { name: string } | null;
+  whatsappGroup?: { name: string; externalId: string } | null;
   offer: {
     product: { title: string; imageUrl?: string | null };
     marketplace: { name: string };
@@ -96,6 +97,9 @@ export default function AgendadorPage() {
                   <p className="text-sm text-[var(--muted)]">
                     {post.campaign?.name ?? "Sem campanha"} - {post.offer.marketplace.name}
                   </p>
+                  {post.whatsappGroup ? (
+                    <p className="text-xs text-[var(--muted)]">Grupo: {post.whatsappGroup.name}</p>
+                  ) : null}
                   {post.errorMessage ? <p className="mt-1 text-sm text-coral">{post.errorMessage}</p> : null}
                 </div>
               </div>
