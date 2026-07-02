@@ -1,12 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ExternalLink, KeyRound, PlugZap, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { Edit3, ExternalLink, KeyRound, PlugZap, RefreshCw, Save, ShieldCheck, X } from "lucide-react";
 import { ErrorLine } from "@/components/AsyncState";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
 import { StatusBadge } from "@/components/StatusBadge";
-import { apiFetch, postJson } from "@/lib/api";
+import { apiFetch, postJson, putJson } from "@/lib/api";
 
 interface Marketplace {
   id: string;
@@ -79,6 +79,7 @@ const programFields: Record<string, QuickField[]> = {
 export default function ConfiguracoesPage() {
   const [marketplaces, setMarketplaces] = useState<Marketplace[]>([]);
   const [accounts, setAccounts] = useState<AffiliateAccount[]>([]);
+  const [editingAccountId, setEditingAccountId] = useState("");
   const [form, setForm] = useState({
     marketplaceId: "",
     name: "",
@@ -117,7 +118,7 @@ export default function ConfiguracoesPage() {
     load().catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar configuracoes."));
   }, []);
 
-  async function createAccount(event: FormEvent) {
+  async function saveAccount(event: FormEvent) {
     event.preventDefault();
     setError("");
     setMessage("");
@@ -128,28 +129,53 @@ export default function ConfiguracoesPage() {
         selectedMarketplace,
         selectedProgramFields
       });
-      await postJson("/affiliate-accounts", {
+      const body = {
         marketplaceId: form.marketplaceId,
         name: payload.name,
         accountIdentifier: payload.accountIdentifier,
         affiliateTag: payload.affiliateTag,
         credentials: payload.credentials,
         config: payload.config
-      });
-      setForm({
-        ...form,
-        name: selectedMarketplace ? `Programa ${selectedMarketplace.name}` : "",
-        accountIdentifier: "",
-        affiliateTag: "",
-        credentials: "{}",
-        config: "{}"
-      });
-      setQuickFields({});
+      };
+      if (editingAccountId) {
+        await putJson(`/affiliate-accounts/${editingAccountId}`, body);
+      } else {
+        await postJson("/affiliate-accounts", body);
+      }
+      resetForm(selectedMarketplace);
       await load();
-      setMessage("Conta salva com credenciais criptografadas.");
+      setMessage(editingAccountId ? "Conta atualizada." : "Conta salva com credenciais criptografadas.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao salvar conta.");
     }
+  }
+
+  function editAccount(account: AffiliateAccount) {
+    setEditingAccountId(account.id);
+    setError("");
+    setMessage("");
+    setQuickFields(account.marketplace.key === "MERCADO_LIVRE" ? { redirectUri: getDefaultRedirectUri() } : {});
+    setForm({
+      marketplaceId: account.marketplace.id,
+      name: account.name,
+      accountIdentifier: account.accountIdentifier ?? "",
+      affiliateTag: account.affiliateTag ?? "",
+      credentials: "{}",
+      config: "{}"
+    });
+  }
+
+  function resetForm(marketplace = selectedMarketplace) {
+    setEditingAccountId("");
+    setForm({
+      marketplaceId: marketplace?.id ?? form.marketplaceId,
+      name: marketplace ? `Programa ${marketplace.name}` : "",
+      accountIdentifier: "",
+      affiliateTag: "",
+      credentials: "{}",
+      config: "{}"
+    });
+    setQuickFields({});
   }
 
   async function testAccount(id: string) {
@@ -277,7 +303,7 @@ export default function ConfiguracoesPage() {
         </div>
 
         <Panel>
-          <form onSubmit={createAccount} className="space-y-3">
+          <form onSubmit={saveAccount} className="space-y-3">
             <label className="block">
               <span className="mb-1 block text-sm font-medium">Marketplace</span>
               <select
@@ -392,24 +418,46 @@ export default function ConfiguracoesPage() {
             </label>
             <button className="focus-ring flex w-full items-center justify-center gap-2 rounded-md bg-leaf px-3 py-2 font-semibold text-white hover:bg-leaf/90">
               <Save size={17} aria-hidden />
-              Salvar conta
+              {editingAccountId ? "Salvar alterações" : "Salvar conta"}
             </button>
+            {editingAccountId ? (
+              <button
+                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 font-semibold hover:bg-mist"
+                onClick={() => resetForm()}
+                type="button"
+              >
+                <X size={17} aria-hidden />
+                Cancelar edição
+              </button>
+            ) : null}
           </form>
 
           <div className="mt-5 space-y-2">
             {accounts.map((account) => (
-              <div key={account.id} className="flex items-center justify-between rounded-md border border-[var(--border)] px-3 py-2">
+              <div key={account.id} className="flex items-center justify-between gap-3 rounded-md border border-[var(--border)] px-3 py-2">
                 <div>
                   <p className="text-sm font-semibold">{account.name}</p>
-                  <p className="text-xs text-[var(--muted)]">{account.marketplace.name}</p>
+                  <p className="text-xs text-[var(--muted)]">
+                    {account.marketplace.name}
+                    {account.affiliateTag ? ` - Tag: ${account.affiliateTag}` : ""}
+                  </p>
                 </div>
-                <button
-                  className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist"
-                  onClick={() => testAccount(account.id)}
-                  title="Testar conexao"
-                >
-                  <PlugZap size={16} aria-hidden />
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist"
+                    onClick={() => editAccount(account)}
+                    title="Editar conta"
+                  >
+                    <Edit3 size={16} aria-hidden />
+                  </button>
+                  <button
+                    className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist"
+                    onClick={() => testAccount(account.id)}
+                    title="Testar conexao"
+                  >
+                    <PlugZap size={16} aria-hidden />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
