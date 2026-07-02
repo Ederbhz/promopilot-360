@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Link2, MessageSquareText, Search } from "lucide-react";
+import { Clipboard, ExternalLink, Link2, MessageSquareText, PlusCircle, Search } from "lucide-react";
 import { ErrorLine } from "@/components/AsyncState";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
@@ -24,12 +24,22 @@ interface Offer {
   marketplace: { name: string; key: string };
 }
 
+interface Campaign {
+  id: string;
+  name: string;
+  channel: string;
+  status: string;
+  marketplace?: { name: string } | null;
+}
+
 type OfferUpdate = Partial<Offer> & { id: string };
 
 export default function GarimparPage() {
   const [marketplaces, setMarketplaces] = useState<Marketplace[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [marketplaceKey, setMarketplaceKey] = useState("");
+  const [campaignId, setCampaignId] = useState("");
   const [keyword, setKeyword] = useState("");
   const [sortBy, setSortBy] = useState("score");
   const [minDiscount, setMinDiscount] = useState("");
@@ -46,6 +56,7 @@ export default function GarimparPage() {
 
   useEffect(() => {
     apiFetch<Marketplace[]>("/marketplaces").then(setMarketplaces).catch(() => setMarketplaces([]));
+    apiFetch<Campaign[]>("/campaigns").then(setCampaigns).catch(() => setCampaigns([]));
     apiFetch<Offer[]>("/offers").then(setOffers).catch(() => setOffers([]));
   }, []);
 
@@ -117,9 +128,41 @@ export default function GarimparPage() {
         {}
       );
       setOffers((current) => current.map((offer) => (offer.id === offerId ? mergeOffer(offer, result.offer) : offer)));
-      setMessage(result.result.message || "Link afiliado atualizado.");
+      const updated = result.offer;
+      if (updated.affiliateUrl) {
+        const copied = await copyText(updated.affiliateUrl);
+        setMessage(copied ? "Link afiliado gerado e copiado." : "Link afiliado gerado. Use o botao copiar no card.");
+      } else {
+        setMessage(result.result.message || "Link afiliado atualizado.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao gerar link afiliado.");
+    }
+  }
+
+  async function copyAffiliateLink(offer: Offer) {
+    if (!offer.affiliateUrl) {
+      setError("Gere ou informe o link afiliado antes de copiar.");
+      return;
+    }
+    const copied = await copyText(offer.affiliateUrl);
+    setError("");
+    setMessage(copied ? "Link afiliado copiado." : "Nao foi possivel copiar automaticamente. Abra o link e copie pela barra do navegador.");
+  }
+
+  async function addOfferToCampaign(offerId: string) {
+    setError("");
+    setMessage("");
+    if (!campaignId) {
+      setError("Selecione uma campanha destino antes de incluir a oferta.");
+      return;
+    }
+    try {
+      const result = await postJson<{ offer: OfferUpdate }>(`/campaigns/${campaignId}/add-offer`, { offerId });
+      setOffers((current) => current.map((offer) => (offer.id === offerId ? mergeOffer(offer, result.offer) : offer)));
+      setMessage("Oferta incluida na campanha e adicionada ao agendador.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao incluir oferta na campanha.");
     }
   }
 
@@ -192,6 +235,21 @@ export default function GarimparPage() {
               {marketplaces.map((marketplace) => (
                 <option value={marketplace.key} key={marketplace.id}>
                   {marketplace.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="mb-1 block text-sm font-medium">Campanha destino</span>
+            <select
+              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+              value={campaignId}
+              onChange={(event) => setCampaignId(event.target.value)}
+            >
+              <option value="">Selecione</option>
+              {campaigns.map((campaign) => (
+                <option value={campaign.id} key={campaign.id}>
+                  {campaign.name} - {campaign.channel}
                 </option>
               ))}
             </select>
@@ -285,15 +343,18 @@ export default function GarimparPage() {
                 <div className="min-w-0">
                   <h2 className="line-clamp-2 text-sm font-semibold text-ink">{offer.product.title}</h2>
                   <p className="text-sm text-[var(--muted)]">{offer.marketplace.name}</p>
+                  {offer.affiliateUrl ? (
+                    <p className="mt-1 line-clamp-1 text-xs text-leaf">Link afiliado pronto</p>
+                  ) : null}
                 </div>
               </div>
-              <div className="grid grid-cols-3 items-center gap-3 md:w-[360px]">
+              <div className="grid items-center gap-3 md:w-[460px] md:grid-cols-[64px_110px_1fr]">
                 <div>
                   <p className="text-xs text-[var(--muted)]">Score</p>
                   <p className="font-semibold">{Number(offer.score ?? 0).toFixed(0)}</p>
                 </div>
                 <StatusBadge value={offer.status} />
-                <div className="flex justify-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
                   <button
                     className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist"
                     onClick={() => generateAffiliateLink(offer.id)}
@@ -302,6 +363,34 @@ export default function GarimparPage() {
                   >
                     <Link2 size={17} aria-hidden />
                   </button>
+                  {offer.affiliateUrl ? (
+                    <>
+                      <button
+                        className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist"
+                        onClick={() => copyAffiliateLink(offer)}
+                        type="button"
+                        title="Copiar link afiliado"
+                      >
+                        <Clipboard size={17} aria-hidden />
+                      </button>
+                      <button
+                        className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist"
+                        onClick={() => window.open(offer.affiliateUrl!, "_blank", "noopener,noreferrer")}
+                        type="button"
+                        title="Abrir link afiliado"
+                      >
+                        <ExternalLink size={17} aria-hidden />
+                      </button>
+                      <button
+                        className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist"
+                        onClick={() => addOfferToCampaign(offer.id)}
+                        type="button"
+                        title="Incluir na campanha"
+                      >
+                        <PlusCircle size={17} aria-hidden />
+                      </button>
+                    </>
+                  ) : null}
                   <button
                     className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist"
                     onClick={() => generateMessage(offer.id)}
@@ -327,6 +416,15 @@ function mergeOffer(current: Offer, updated: OfferUpdate): Offer {
     product: updated.product ?? current.product,
     marketplace: updated.marketplace ?? current.marketplace
   };
+}
+
+async function copyText(value: string) {
+  try {
+    await navigator.clipboard?.writeText(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function numberOrUndefined(value: string) {
