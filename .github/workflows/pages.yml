@@ -81,4 +81,6 @@ jobs:
           fi
 
           cat /tmp/pages-response.json
-          test "${status}" -ge 200 -a "${status}" -lt 300
+          if [ "${status}" -lt 200 ] || [ "${status}" -ge 300 ]; then
+            echo "::warning::Nao foi possivel trocar a fonte do GitHub Pages automaticamente. Configure Pages para usar branch gh-pages / root."
+          fi
