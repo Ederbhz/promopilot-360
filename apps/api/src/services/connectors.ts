@@ -24,17 +24,22 @@ const baseConnectorEnv: ConnectorEnv = {
 export const connectors = createConnectorRegistry(baseConnectorEnv);
 
 export async function getConnectorForMarketplace(key: MarketplaceKey) {
-  const account = await prisma.affiliateAccount.findFirst({
+  const accounts = await prisma.affiliateAccount.findMany({
     where: {
       isActive: true,
       marketplace: { key }
     },
     include: { marketplace: true },
-    orderBy: { updatedAt: "desc" }
+    orderBy: { updatedAt: "asc" }
   });
 
-  if (!account) return connectors[key] ?? connectors.MANUAL;
-  return getConnectorForAffiliateAccount(account);
+  if (!accounts.length) return connectors[key] ?? connectors.MANUAL;
+
+  const envForMarketplace = accounts.reduce<ConnectorEnv>(
+    (current, account) => ({ ...current, ...accountToConnectorEnv(account) }),
+    baseConnectorEnv
+  );
+  return createConnectorRegistry(envForMarketplace)[key] ?? connectors.MANUAL;
 }
 
 export function getConnectorForAffiliateAccount(account: {
@@ -65,7 +70,7 @@ function accountToConnectorEnv(account: {
 
   switch (account.marketplace.key) {
     case "AWIN":
-      return {
+      return compactEnv({
         AWIN_API_TOKEN: pick(credentials, "apiToken", "token", "AWIN_API_TOKEN"),
         AWIN_PUBLISHER_ID:
           account.affiliateTag ??
@@ -75,9 +80,9 @@ function accountToConnectorEnv(account: {
         AWIN_NATURA_ADVERTISER_ID:
           pick(credentials, "advertiserId", "naturaAdvertiserId", "AWIN_NATURA_ADVERTISER_ID") ??
           pick(config, "advertiserId", "naturaAdvertiserId", "AWIN_NATURA_ADVERTISER_ID")
-      };
+      });
     case "SHOPEE":
-      return {
+      return compactEnv({
         SHOPEE_APP_ID:
           account.accountIdentifier ??
           pick(credentials, "appId", "app_id", "clientId", "SHOPEE_APP_ID") ??
@@ -92,9 +97,9 @@ function accountToConnectorEnv(account: {
         SHOPEE_API_BASE_URL:
           pick(credentials, "apiBaseUrl", "baseUrl", "SHOPEE_API_BASE_URL") ??
           pick(config, "apiBaseUrl", "baseUrl", "SHOPEE_API_BASE_URL")
-      };
+      });
     case "MERCADO_LIVRE":
-      return {
+      return compactEnv({
         MELI_CLIENT_ID:
           account.accountIdentifier ??
           pick(credentials, "clientId", "appId", "MELI_CLIENT_ID") ??
@@ -112,18 +117,24 @@ function accountToConnectorEnv(account: {
           account.affiliateTag ??
           pick(credentials, "affiliateTag", "tag", "mattTool", "MELI_AFFILIATE_TAG") ??
           pick(config, "affiliateTag", "tag", "mattTool", "MELI_AFFILIATE_TAG")
-      };
+      });
     case "MAGALU":
-      return {
+      return compactEnv({
         MAGALU_STORE_URL:
           account.accountIdentifier ??
           account.affiliateTag ??
           pick(credentials, "storeUrl", "partnerUrl", "MAGALU_STORE_URL") ??
           pick(config, "storeUrl", "partnerUrl", "MAGALU_STORE_URL")
-      };
+      });
     default:
       return {};
   }
+}
+
+function compactEnv(value: ConnectorEnv): ConnectorEnv {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => typeof entry === "string" && entry.trim().length > 0)
+  ) as ConnectorEnv;
 }
 
 function safeDecrypt(payload: unknown): Record<string, unknown> {

@@ -134,7 +134,7 @@ export default function GarimparPage() {
         const copied = await copyText(updated.affiliateUrl);
         setMessage(copied ? "Link afiliado gerado e copiado." : "Link afiliado gerado. Use o botao copiar no card.");
       } else {
-        setMessage(result.result.message || "Geracao automatica nao retornou link. Cole o link afiliado final no card da oferta.");
+        setError(result.result.message || "Geracao automatica nao retornou link. Cole o link afiliado final no card da oferta.");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao gerar link afiliado.");

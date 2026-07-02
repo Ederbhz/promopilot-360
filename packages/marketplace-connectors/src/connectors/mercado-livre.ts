@@ -167,7 +167,8 @@ export class MercadoLivreConnector implements MarketplaceConnector {
     return {
       requiresManualInput: true,
       provider: "mercado-livre",
-      message: "Mercado Livre esta no modo assistido. Cole o link gerado no Portal do Afiliado."
+      message:
+        "Nao encontrei a Tag de afiliado do Mercado Livre (matt_tool). Salve essa tag em Configuracoes ou cole o link final no card da oferta."
     };
   }
 
