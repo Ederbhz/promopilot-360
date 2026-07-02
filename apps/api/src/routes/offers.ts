@@ -32,6 +32,8 @@ const defaultMarketplaceNames: Record<MarketplaceKey, { name: string; integratio
   MANUAL: { name: "Manual", integrationType: IntegrationType.MANUAL }
 };
 
+const offerCardInclude = { product: true, marketplace: true } as const;
+
 router.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -222,7 +224,8 @@ router.post(
     if (body.affiliateUrl) {
       const updated = await prisma.offer.update({
         where: { id: offer.id },
-        data: { affiliateUrl: body.affiliateUrl, status: OfferStatus.VALID }
+        data: { affiliateUrl: body.affiliateUrl, status: OfferStatus.VALID },
+        include: offerCardInclude
       });
       res.json({ result: { requiresManualInput: false, affiliateUrl: body.affiliateUrl }, offer: updated });
       return;
@@ -243,7 +246,8 @@ router.post(
           affiliateProvider: result.provider,
           affiliateMetadata: result.metadata ?? null
         })
-      }
+      },
+      include: offerCardInclude
     });
     res.json({ result, offer: updated });
   })

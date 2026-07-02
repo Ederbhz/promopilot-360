@@ -24,6 +24,8 @@ interface Offer {
   marketplace: { name: string; key: string };
 }
 
+type OfferUpdate = Partial<Offer> & { id: string };
+
 export default function GarimparPage() {
   const [marketplaces, setMarketplaces] = useState<Marketplace[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -107,15 +109,30 @@ export default function GarimparPage() {
   }
 
   async function generateAffiliateLink(offerId: string) {
-    const result = await postJson<{ offer: Offer; result: { message?: string } }>(`/offers/${offerId}/generate-affiliate-link`, {});
-    setOffers((current) => current.map((offer) => (offer.id === offerId ? result.offer : offer)));
-    setMessage(result.result.message || "Link afiliado atualizado.");
+    setError("");
+    setMessage("");
+    try {
+      const result = await postJson<{ offer: OfferUpdate; result: { message?: string } }>(
+        `/offers/${offerId}/generate-affiliate-link`,
+        {}
+      );
+      setOffers((current) => current.map((offer) => (offer.id === offerId ? mergeOffer(offer, result.offer) : offer)));
+      setMessage(result.result.message || "Link afiliado atualizado.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao gerar link afiliado.");
+    }
   }
 
   async function generateMessage(offerId: string) {
-    const result = await postJson<{ message: string }>(`/offers/${offerId}/generate-message`, { channel: "WHATSAPP" });
-    await navigator.clipboard?.writeText(result.message);
-    setMessage("Mensagem gerada e copiada.");
+    setError("");
+    setMessage("");
+    try {
+      const result = await postJson<{ message: string }>(`/offers/${offerId}/generate-message`, { channel: "WHATSAPP" });
+      await navigator.clipboard?.writeText(result.message);
+      setMessage("Mensagem gerada e copiada.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao gerar mensagem.");
+    }
   }
 
   return (
@@ -301,6 +318,15 @@ export default function GarimparPage() {
       </div>
     </>
   );
+}
+
+function mergeOffer(current: Offer, updated: OfferUpdate): Offer {
+  return {
+    ...current,
+    ...updated,
+    product: updated.product ?? current.product,
+    marketplace: updated.marketplace ?? current.marketplace
+  };
 }
 
 function numberOrUndefined(value: string) {
