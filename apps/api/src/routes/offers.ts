@@ -236,11 +236,12 @@ router.post(
       marketplaceKey: offer.marketplace.key,
       destinationUrl: offer.originalUrl
     });
+    const affiliateUrl = result.affiliateUrl ?? offer.affiliateUrl;
     const updated = await prisma.offer.update({
       where: { id: offer.id },
       data: {
-        affiliateUrl: result.affiliateUrl,
-        status: result.affiliateUrl ? OfferStatus.VALID : OfferStatus.AFFILIATE_LINK_MISSING,
+        affiliateUrl,
+        status: affiliateUrl ? OfferStatus.VALID : OfferStatus.AFFILIATE_LINK_MISSING,
         metadata: jsonInput({
           ...((offer.metadata as Record<string, unknown> | null) ?? {}),
           affiliateProvider: result.provider,

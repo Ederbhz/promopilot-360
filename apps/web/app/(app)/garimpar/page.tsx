@@ -39,7 +39,8 @@ export default function GarimparPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [marketplaceKey, setMarketplaceKey] = useState("");
-  const [campaignId, setCampaignId] = useState("");
+  const [campaignByOffer, setCampaignByOffer] = useState<Record<string, string>>({});
+  const [affiliateUrlByOffer, setAffiliateUrlByOffer] = useState<Record<string, string>>({});
   const [keyword, setKeyword] = useState("");
   const [sortBy, setSortBy] = useState("score");
   const [minDiscount, setMinDiscount] = useState("");
@@ -133,10 +134,30 @@ export default function GarimparPage() {
         const copied = await copyText(updated.affiliateUrl);
         setMessage(copied ? "Link afiliado gerado e copiado." : "Link afiliado gerado. Use o botao copiar no card.");
       } else {
-        setMessage(result.result.message || "Link afiliado atualizado.");
+        setMessage(result.result.message || "Geracao automatica nao retornou link. Cole o link afiliado final no card da oferta.");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao gerar link afiliado.");
+    }
+  }
+
+  async function saveAffiliateLink(offerId: string) {
+    setError("");
+    setMessage("");
+    const affiliateUrl = affiliateUrlByOffer[offerId]?.trim();
+    if (!affiliateUrl) {
+      setError("Cole o link afiliado final antes de salvar.");
+      return;
+    }
+    try {
+      const result = await postJson<{ offer: OfferUpdate }>(`/offers/${offerId}/generate-affiliate-link`, {
+        affiliateUrl
+      });
+      setOffers((current) => current.map((offer) => (offer.id === offerId ? mergeOffer(offer, result.offer) : offer)));
+      setAffiliateUrlByOffer((current) => ({ ...current, [offerId]: "" }));
+      setMessage("Link afiliado salvo para esta oferta.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao salvar link afiliado.");
     }
   }
 
@@ -150,16 +171,21 @@ export default function GarimparPage() {
     setMessage(copied ? "Link afiliado copiado." : "Nao foi possivel copiar automaticamente. Abra o link e copie pela barra do navegador.");
   }
 
-  async function addOfferToCampaign(offerId: string) {
+  async function addOfferToCampaign(offer: Offer) {
     setError("");
     setMessage("");
+    const campaignId = campaignByOffer[offer.id];
     if (!campaignId) {
-      setError("Selecione uma campanha destino antes de incluir a oferta.");
+      setError("Selecione a campanha neste item antes de incluir a oferta.");
+      return;
+    }
+    if (!offer.affiliateUrl) {
+      setError("Gere ou cole o link afiliado final antes de incluir a oferta na campanha.");
       return;
     }
     try {
-      const result = await postJson<{ offer: OfferUpdate }>(`/campaigns/${campaignId}/add-offer`, { offerId });
-      setOffers((current) => current.map((offer) => (offer.id === offerId ? mergeOffer(offer, result.offer) : offer)));
+      const result = await postJson<{ offer: OfferUpdate }>(`/campaigns/${campaignId}/add-offer`, { offerId: offer.id });
+      setOffers((current) => current.map((item) => (item.id === offer.id ? mergeOffer(item, result.offer) : item)));
       setMessage("Oferta incluida na campanha e adicionada ao agendador.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao incluir oferta na campanha.");
@@ -235,21 +261,6 @@ export default function GarimparPage() {
               {marketplaces.map((marketplace) => (
                 <option value={marketplace.key} key={marketplace.id}>
                   {marketplace.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="mb-1 block text-sm font-medium">Campanha destino</span>
-            <select
-              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-              value={campaignId}
-              onChange={(event) => setCampaignId(event.target.value)}
-            >
-              <option value="">Selecione</option>
-              {campaigns.map((campaign) => (
-                <option value={campaign.id} key={campaign.id}>
-                  {campaign.name} - {campaign.channel}
                 </option>
               ))}
             </select>
@@ -348,7 +359,7 @@ export default function GarimparPage() {
                   ) : null}
                 </div>
               </div>
-              <div className="grid items-center gap-3 md:w-[460px] md:grid-cols-[64px_110px_1fr]">
+              <div className="grid items-center gap-3 md:w-[560px] md:grid-cols-[64px_110px_1fr]">
                 <div>
                   <p className="text-xs text-[var(--muted)]">Score</p>
                   <p className="font-semibold">{Number(offer.score ?? 0).toFixed(0)}</p>
@@ -383,7 +394,7 @@ export default function GarimparPage() {
                       </button>
                       <button
                         className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist"
-                        onClick={() => addOfferToCampaign(offer.id)}
+                        onClick={() => addOfferToCampaign(offer)}
                         type="button"
                         title="Incluir na campanha"
                       >
@@ -401,6 +412,51 @@ export default function GarimparPage() {
                   </button>
                 </div>
               </div>
+            </div>
+            <div className="mt-3 grid gap-2 border-t border-[var(--border)] pt-3 md:grid-cols-[1fr_1fr_auto_auto]">
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Campanha deste item</span>
+                <select
+                  className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+                  value={campaignByOffer[offer.id] ?? ""}
+                  onChange={(event) => setCampaignByOffer({ ...campaignByOffer, [offer.id]: event.target.value })}
+                >
+                  <option value="">Escolher campanha</option>
+                  {campaigns.map((campaign) => (
+                    <option value={campaign.id} key={campaign.id}>
+                      {campaign.name} - {campaign.channel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-[var(--muted)]">Link afiliado final</span>
+                <input
+                  className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+                  value={affiliateUrlByOffer[offer.id] ?? ""}
+                  onChange={(event) => setAffiliateUrlByOffer({ ...affiliateUrlByOffer, [offer.id]: event.target.value })}
+                  placeholder={offer.affiliateUrl ? "Link ja salvo" : "Cole aqui"}
+                  type="url"
+                />
+              </label>
+              <button
+                className="focus-ring mt-auto flex items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist"
+                onClick={() => saveAffiliateLink(offer.id)}
+                type="button"
+                title="Salvar link afiliado"
+              >
+                <Link2 size={16} aria-hidden />
+                Salvar
+              </button>
+              <button
+                className="focus-ring mt-auto flex items-center justify-center gap-2 rounded-md bg-leaf px-3 py-2 text-sm font-semibold text-white hover:bg-leaf/90"
+                onClick={() => addOfferToCampaign(offer)}
+                type="button"
+                title="Incluir na campanha"
+              >
+                <PlusCircle size={16} aria-hidden />
+                Incluir
+              </button>
             </div>
           </Panel>
         ))}
