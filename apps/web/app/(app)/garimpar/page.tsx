@@ -19,6 +19,8 @@ interface Offer {
   status: string;
   score: string | number | null;
   currentPrice?: string | number | null;
+  oldPrice?: string | number | null;
+  discountPercent?: string | number | null;
   affiliateUrl?: string | null;
   product: { title: string; imageUrl?: string | null };
   marketplace: { name: string; key: string };
@@ -359,7 +361,21 @@ export default function GarimparPage() {
                   ) : null}
                 </div>
               </div>
-              <div className="grid items-center gap-3 md:w-[560px] md:grid-cols-[64px_110px_1fr]">
+              <div className="grid items-center gap-3 md:w-[680px] md:grid-cols-[132px_64px_110px_1fr]">
+                <div>
+                  <p className="text-xs text-[var(--muted)]">Preco</p>
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <p className="font-semibold text-ink">{formatCurrency(offer.currentPrice)}</p>
+                    {hasPrice(offer.oldPrice) ? (
+                      <p className="text-xs text-[var(--muted)] line-through">{formatCurrency(offer.oldPrice)}</p>
+                    ) : null}
+                    {hasDiscount(offer.discountPercent) ? (
+                      <span className="rounded-sm bg-amber/30 px-1.5 py-0.5 text-xs font-semibold text-ink">
+                        -{Number(offer.discountPercent).toFixed(0)}%
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
                 <div>
                   <p className="text-xs text-[var(--muted)]">Score</p>
                   <p className="font-semibold">{Number(offer.score ?? 0).toFixed(0)}</p>
@@ -488,4 +504,23 @@ function numberOrUndefined(value: string) {
   if (!normalized) return undefined;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function hasPrice(value: string | number | null | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function hasDiscount(value: string | number | null | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function formatCurrency(value: string | number | null | undefined) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return "Preco indisponivel";
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  }).format(parsed);
 }
