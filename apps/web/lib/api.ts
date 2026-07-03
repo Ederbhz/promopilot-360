@@ -1,7 +1,7 @@
 "use client";
 
 const RENDER_API_URL = "https://promopilot360-api.onrender.com";
-const REQUEST_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 90000;
 
 function getApiUrl() {
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
@@ -57,7 +57,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   } catch (err) {
     if (err instanceof ApiError) throw err;
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new ApiError("A API demorou para responder. Tente novamente em alguns segundos.", 0);
+      throw new ApiError("A API demorou para responder. Aguarde alguns segundos e tente novamente.", 0);
     }
     throw new ApiError("Nao foi possivel conectar com a API do PromoPilot.", 0);
   } finally {

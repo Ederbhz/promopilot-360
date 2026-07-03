@@ -22,6 +22,8 @@ interface ProviderResult {
 }
 
 const wppTokenCache = new Map<string, string>();
+const WPP_WAKE_RETRY_STATUS = new Set([502, 503, 504]);
+const WPP_WAKE_RETRY_DELAYS_MS = [1500, 3000, 5000, 8000, 13000, 21000];
 
 export class WhatsAppRateLimitError extends Error {
   constructor(
@@ -250,7 +252,7 @@ async function sendWppText(connection: WhatsAppConnection, groupExternalId: stri
 
 async function wppRequest(connection: WhatsAppConnection, path: string, init: RequestInit = {}) {
   const token = await ensureWppToken(connection);
-  const response = await fetch(`${resolveWppBaseUrl(connection)}${path}`, {
+  const response = await fetchWppWithRetry(`${resolveWppBaseUrl(connection)}${path}`, {
     ...init,
     headers: {
       authorization: `Bearer ${token}`,
@@ -308,7 +310,7 @@ async function ensureWppToken(connection: WhatsAppConnection) {
   }
 
   const session = resolveSessionName(connection);
-  const response = await fetch(
+  const response = await fetchWppWithRetry(
     `${baseUrl}/api/${encodeURIComponent(session)}/${encodeURIComponent(secretKey)}/generate-token`,
     { method: "POST" }
   );
@@ -508,6 +510,28 @@ async function readProviderResponse(response: Response, provider: string) {
   return (payload ?? { ok: true }) as ProviderResult;
 }
 
+async function fetchWppWithRetry(url: string, init: RequestInit = {}) {
+  for (let attempt = 0; attempt <= WPP_WAKE_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await fetch(url, init);
+      if (!WPP_WAKE_RETRY_STATUS.has(response.status) || attempt === WPP_WAKE_RETRY_DELAYS_MS.length) {
+        return response;
+      }
+      await response.arrayBuffer().catch(() => undefined);
+    } catch (error) {
+      if (attempt === WPP_WAKE_RETRY_DELAYS_MS.length) {
+        throw new Error(
+          `WPPConnect indisponivel no Render. O servico gratuito pode estar acordando ou reiniciando. Detalhe: ${
+            error instanceof Error ? error.message : "falha de rede"
+          }`
+        );
+      }
+    }
+    await delay(WPP_WAKE_RETRY_DELAYS_MS[attempt]!);
+  }
+  throw new Error("WPPConnect indisponivel no Render.");
+}
+
 function resolveWppBaseUrl(connection: WhatsAppConnection) {
   const config = toRecord(connection.config);
   return (
@@ -602,6 +626,9 @@ function readProviderError(payload: unknown, text: string) {
   const error = toRecord(record.error);
   const message = error.message ?? record.message ?? record.error_description ?? record.error;
   if (typeof message === "string" && message.trim()) return message.trim().slice(0, 240);
+  if (/<html[\s>]/i.test(text) || /<!doctype html/i.test(text)) {
+    return "servico indisponivel no Render. Aguarde o WPPConnect terminar de iniciar e tente novamente.";
+  }
   return text.replace(/\s+/g, " ").trim().slice(0, 240) || "resposta sem detalhes.";
 }
 
