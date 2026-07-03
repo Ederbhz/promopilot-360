@@ -2,7 +2,7 @@ services:
   - type: web
     name: promopilot360-wppconnect
     runtime: docker
-    plan: starter
+    plan: free
     region: oregon
     rootDir: apps/wppconnect
     healthCheckPath: /healthz
@@ -10,12 +10,15 @@ services:
     envVars:
       - key: SECRET_KEY
         generateValue: true
+      - key: REDIS_URL
+        fromService:
+          name: promopilot360-redis
+          type: keyvalue
+          property: connectionString
+      - key: WPP_TOKEN_STORE
+        value: redis
       - key: WPP_LOG_LEVEL
         value: info
-    disk:
-      name: wppconnect-data
-      mountPath: /usr/src/wpp-server/tokens
-      sizeGB: 1
 
   - type: web
     name: promopilot360-api

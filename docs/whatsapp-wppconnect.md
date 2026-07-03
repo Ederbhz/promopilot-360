@@ -16,9 +16,9 @@ O WPPConnect ficara disponivel em:
 http://localhost:21465
 ```
 
-No Render, o `render.yaml` cria o servico `promopilot360-wppconnect` como Docker, com disco persistente para os tokens da sessao. A API recebe automaticamente o hostname publico e a `SECRET_KEY` desse servico pelo Blueprint, sem precisar cadastrar URL ou chave na tela.
+No Render, o `render.yaml` cria o servico `promopilot360-wppconnect` como Docker no plano gratuito e usa o Key Value/Redis `promopilot360-redis` para guardar os tokens da sessao. A API recebe automaticamente o hostname publico e a `SECRET_KEY` desse servico pelo Blueprint, sem precisar cadastrar URL ou chave na tela.
 
-O servico WPPConnect usa `plan: starter` e disco de 1 GB para evitar perda de sessao quando o container reiniciar. Se trocar para plano gratuito, a sessao pode cair com mais frequencia e pedir QR Code novamente.
+No plano gratuito, o Render Key Value nao tem persistencia em disco. Isso evita custo mensal, mas se o Redis ou o servico reiniciar em uma condicao que perca memoria, a sessao pode pedir QR Code novamente. Para producao mais estavel, use um Redis/MongoDB persistente ou um disco pago.
 
 ## Variaveis
 
@@ -27,6 +27,7 @@ WPP_SERVER_URL=http://localhost:21465
 WPP_SERVER_HOSTNAME=
 WPP_SESSION_NAME=promopilot360
 WPP_SECRET_KEY=THISISMYSECURETOKEN
+WPP_TOKEN_STORE=redis
 WHATSAPP_DEFAULT_INTERVAL_SECONDS=60
 WHATSAPP_DAILY_LIMIT=100
 WHATSAPP_MAX_CONSECUTIVE_FAILURES=5

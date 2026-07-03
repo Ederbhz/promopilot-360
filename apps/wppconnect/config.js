@@ -2,6 +2,7 @@ const port = process.env.PORT || "21465";
 const externalHost = process.env.RENDER_EXTERNAL_HOSTNAME
   ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`
   : "http://localhost";
+const redisConfig = readRedisConfig(process.env.REDIS_URL);
 
 const config = {
   secretKey: process.env.SECRET_KEY || "CHANGE_ME",
@@ -10,9 +11,9 @@ const config = {
   deviceName: "PromoPilot 360",
   poweredBy: "WPPConnect-Server",
   startAllSession: true,
-  tokenStoreType: "file",
+  tokenStoreType: process.env.WPP_TOKEN_STORE || (process.env.REDIS_URL ? "redis" : "file"),
   maxListeners: 15,
-  customUserDataDir: "/usr/src/wpp-server/tokens/userDataDir/",
+  customUserDataDir: process.env.WPP_USER_DATA_DIR || "/tmp/wppconnect/userDataDir/",
   webhook: {
     url: null,
     autoDownload: true,
@@ -86,10 +87,11 @@ const config = {
     mongoIsRemote: true,
     mongoURLRemote: "",
     mongodbPort: 27017,
-    redisHost: "localhost",
-    redisPort: 6379,
-    redisPassword: "",
-    redisDb: 0,
+    redisHost: redisConfig.host,
+    redisPort: redisConfig.port,
+    redisPassword: redisConfig.password,
+    redisDb: redisConfig.db,
+    redisTls: redisConfig.tls,
     redisPrefix: "promopilot"
   },
   aws_s3: {
@@ -105,3 +107,31 @@ const config = {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = config;
 
+function readRedisConfig(rawUrl) {
+  if (!rawUrl) {
+    return {
+      host: process.env.REDIS_HOST || "localhost",
+      port: Number(process.env.REDIS_PORT || 6379),
+      password: process.env.REDIS_PASSWORD || "",
+      db: Number(process.env.REDIS_DB || 0)
+    };
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    return {
+      host: parsed.hostname || "localhost",
+      port: Number(parsed.port || 6379),
+      password: decodeURIComponent(parsed.password || ""),
+      db: Number(parsed.pathname.replace("/", "") || process.env.REDIS_DB || 0),
+      tls: parsed.protocol === "rediss:"
+    };
+  } catch {
+    return {
+      host: rawUrl,
+      port: Number(process.env.REDIS_PORT || 6379),
+      password: process.env.REDIS_PASSWORD || "",
+      db: Number(process.env.REDIS_DB || 0)
+    };
+  }
+}
