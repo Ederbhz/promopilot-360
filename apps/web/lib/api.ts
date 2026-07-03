@@ -1,7 +1,7 @@
 "use client";
 
 const RENDER_API_URL = "https://promopilot360-api.onrender.com";
-const REQUEST_TIMEOUT_MS = 90000;
+const REQUEST_TIMEOUT_MS = 150000;
 
 function getApiUrl() {
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;

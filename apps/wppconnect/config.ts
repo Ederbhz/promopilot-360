@@ -48,9 +48,19 @@ const config = {
     logger: ["console"]
   },
   createOptions: {
+    autoClose: 0,
+    deviceSyncTimeout: 0,
+    waitForLogin: false,
+    puppeteerOptions: {
+      timeout: 0,
+      protocolTimeout: 180000
+    },
     browserArgs: [
       "--disable-web-security",
       "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--no-zygote",
+      "--single-process",
       "--aggressive-cache-discard",
       "--disable-cache",
       "--disable-application-cache",
@@ -136,4 +146,3 @@ function readRedisConfig(rawUrl?: string) {
     };
   }
 }
-

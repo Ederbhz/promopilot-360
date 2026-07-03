@@ -89,7 +89,7 @@ export async function startWhatsAppSession(connectionId: string) {
       method: "POST",
       body: JSON.stringify({
         webhook: stringValue(config.webhookUrl) ?? "",
-        waitQrCode: false
+        waitQrCode: true
       })
     });
 
@@ -276,12 +276,12 @@ async function tryGetWppQrCode(connection: WhatsAppConnection) {
 }
 
 async function waitForWppQrCode(connection: WhatsAppConnection) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
     const payload = await tryGetWppQrCode(connection);
     if (extractQrCode(payload) || normalizeWppStatus(payload) === WhatsAppConnectionStatus.CONNECTED) {
       return payload;
     }
-    await delay(1200);
+    await delay(2500);
   }
   return tryGetWppQrCode(connection);
 }
