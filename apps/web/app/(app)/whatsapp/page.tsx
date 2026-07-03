@@ -16,7 +16,6 @@ interface WhatsAppConnection {
   phoneNumber?: string | null;
   provider: string;
   status: string;
-  phoneNumberId?: string | null;
   qrCode?: string | null;
   lastConnectedAt?: string | null;
   lastError?: string | null;
@@ -51,17 +50,11 @@ const emptyConnectionForm = {
   name: "",
   sessionName: "promopilot360",
   phoneNumber: "",
-  provider: "WPPCONNECT",
-  phoneNumberId: "",
-  token: "",
   secretKey: "",
   apiBaseUrl: "",
-  webhookUrl: "",
   dailyLimit: 100,
   minIntervalSeconds: 60,
   messageType: "TEXT_IMAGE",
-  previewFormat: "PORTRAIT",
-  removePreviewTitle: false,
   optimizeImage: false,
   resizeImage: true
 };
@@ -87,6 +80,7 @@ export default function WhatsAppPage() {
   const [editingConnectionId, setEditingConnectionId] = useState("");
   const [editingGroupId, setEditingGroupId] = useState("");
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
+  const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -114,12 +108,12 @@ export default function WhatsAppPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedConnection?.id || selectedConnection.provider !== "WPPCONNECT") return;
+    if (!selectedConnection?.id) return;
     const interval = window.setInterval(() => {
       refreshStatus(selectedConnection.id, false).catch(() => undefined);
     }, 8000);
     return () => window.clearInterval(interval);
-  }, [selectedConnection?.id, selectedConnection?.provider]);
+  }, [selectedConnection?.id]);
 
   async function saveConnection(event: FormEvent) {
     event.preventDefault();
@@ -174,49 +168,114 @@ export default function WhatsAppPage() {
 
   async function startConnection(id: string) {
     setError("");
-    const connection = await postJson<WhatsAppConnection>(`/whatsapp/connections/${id}/start`, {});
-    await load();
-    setSelectedConnectionId(connection.id);
-    setMessage(connection.status === "CONNECTED" ? "Sessao conectada." : "QRCode atualizado.");
+    setMessage("");
+    setBusyAction("start");
+    try {
+      const connection = await postJson<WhatsAppConnection>(`/whatsapp/connections/${id}/start`, {});
+      await load();
+      setSelectedConnectionId(connection.id);
+      setMessage(connection.status === "CONNECTED" ? "Sessao conectada." : "QRCode atualizado.");
+    } catch (err) {
+      await load().catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Falha ao conectar sessao.");
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function logoutConnection(id: string) {
     setError("");
-    await postJson(`/whatsapp/connections/${id}/logout`, {});
-    await load();
-    setMessage("Sessao desconectada.");
+    setMessage("");
+    setBusyAction("logout");
+    try {
+      await postJson(`/whatsapp/connections/${id}/logout`, {});
+      await load();
+      setMessage("Sessao desconectada.");
+    } catch (err) {
+      await load().catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Falha ao desconectar sessao.");
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function restartConnection(id: string) {
     setError("");
-    const connection = await postJson<WhatsAppConnection>(`/whatsapp/connections/${id}/restart`, {});
-    await load();
-    setSelectedConnectionId(connection.id);
-    setMessage("Sessao reiniciada.");
+    setMessage("");
+    setBusyAction("restart");
+    try {
+      const connection = await postJson<WhatsAppConnection>(`/whatsapp/connections/${id}/restart`, {});
+      await load();
+      setSelectedConnectionId(connection.id);
+      setMessage("Sessao reiniciada.");
+    } catch (err) {
+      await load().catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Falha ao reiniciar sessao.");
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function refreshStatus(id: string, showMessage = true) {
-    const connection = await apiFetch<WhatsAppConnection>(`/whatsapp/connections/${id}/session/status`);
-    setConnections((current) => current.map((item) => (item.id === id ? connection : item)));
-    if (showMessage) setMessage(`Status: ${connection.status}`);
+    if (showMessage) {
+      setError("");
+      setMessage("");
+      setBusyAction("status");
+    }
+    try {
+      const connection = await apiFetch<WhatsAppConnection>(`/whatsapp/connections/${id}/session/status`);
+      setConnections((current) => current.map((item) => (item.id === id ? connection : item)));
+      if (showMessage) setMessage(`Status: ${connection.status}`);
+    } catch (err) {
+      await load().catch(() => undefined);
+      if (showMessage) setError(err instanceof Error ? err.message : "Falha ao atualizar status.");
+      throw err;
+    } finally {
+      if (showMessage) setBusyAction("");
+    }
   }
 
   async function testConnection(id: string) {
-    const result = await postJson<{ message?: string; ok: boolean }>(`/whatsapp/connections/${id}/test`, {});
-    await load();
-    setMessage(result.message || (result.ok ? "Conexao ativa." : "Conexao pendente."));
+    setError("");
+    setMessage("");
+    setBusyAction("test");
+    try {
+      const result = await postJson<{ message?: string; ok: boolean }>(`/whatsapp/connections/${id}/test`, {});
+      await load();
+      setMessage(result.message || (result.ok ? "Conexao ativa." : "Conexao pendente."));
+    } catch (err) {
+      await load().catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Falha ao testar conexao.");
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function findAvailableGroups(id: string) {
     setError("");
-    setAvailableGroups(await apiFetch<AvailableGroup[]>(`/whatsapp/connections/${id}/available-groups`));
-    setMessage("Grupos carregados da sessao.");
+    setMessage("");
+    setBusyAction("groups");
+    try {
+      setAvailableGroups(await apiFetch<AvailableGroup[]>(`/whatsapp/connections/${id}/available-groups`));
+      setMessage("Grupos carregados da sessao.");
+    } catch (err) {
+      await load().catch(() => undefined);
+      setError(err instanceof Error ? err.message : "Falha ao listar grupos.");
+    } finally {
+      setBusyAction("");
+    }
   }
 
   async function deleteGroup(id: string) {
-    await apiFetch(`/whatsapp/groups/${id}`, { method: "DELETE" });
-    await load();
-    setMessage("Grupo inativado.");
+    setError("");
+    setMessage("");
+    try {
+      await apiFetch(`/whatsapp/groups/${id}`, { method: "DELETE" });
+      await load();
+      setMessage("Grupo inativado.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao inativar grupo.");
+    }
   }
 
   function editConnection(connection: WhatsAppConnection) {
@@ -227,17 +286,11 @@ export default function WhatsAppPage() {
       name: connection.name,
       sessionName: connection.sessionName ?? (stringValue(config.sessionName) || "promopilot360"),
       phoneNumber: connection.phoneNumber ?? "",
-      provider: connection.provider,
-      phoneNumberId: connection.phoneNumberId ?? "",
-      token: "",
       secretKey: "",
       apiBaseUrl: stringValue(config.apiBaseUrl),
-      webhookUrl: stringValue(config.webhookUrl),
       dailyLimit: connection.dailyLimit ?? 100,
       minIntervalSeconds: connection.minIntervalSeconds ?? 60,
       messageType: stringValue(config.messageType) || "TEXT_IMAGE",
-      previewFormat: stringValue(config.previewFormat) || "PORTRAIT",
-      removePreviewTitle: config.removePreviewTitle === true,
       optimizeImage: config.optimizeImage === true,
       resizeImage: config.resizeImage !== false
     });
@@ -290,7 +343,7 @@ export default function WhatsAppPage() {
                     className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
                     value={connectionForm.sessionName}
                     onChange={(event) => setConnectionForm({ ...connectionForm, sessionName: event.target.value })}
-                    required={connectionForm.provider === "WPPCONNECT"}
+                    required
                   />
                 </label>
               </div>
@@ -305,30 +358,16 @@ export default function WhatsAppPage() {
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium">Provedor</span>
-                  <select
-                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                    value={connectionForm.provider}
-                    onChange={(event) => setConnectionForm({ ...connectionForm, provider: event.target.value })}
-                  >
-                    <option value="WPPCONNECT">WPPConnect Server</option>
-                    <option value="WASSENGER">Wassenger</option>
-                    <option value="WEBHOOK">Webhook/API propria</option>
-                    <option value="CLOUD_API">WhatsApp Cloud API</option>
-                    <option value="ASSISTED">Assistido</option>
-                  </select>
-                </label>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
                   <span className="mb-1 block text-sm font-medium">URL da API</span>
                   <input
                     className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
                     value={connectionForm.apiBaseUrl}
                     onChange={(event) => setConnectionForm({ ...connectionForm, apiBaseUrl: event.target.value })}
-                    placeholder="http://localhost:21465"
+                    placeholder="https://seu-wppconnect.onrender.com"
                   />
                 </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium">Secret key</span>
                   <input
@@ -338,35 +377,18 @@ export default function WhatsAppPage() {
                     onChange={(event) => setConnectionForm({ ...connectionForm, secretKey: event.target.value })}
                   />
                 </label>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium">Token</span>
-                  <input
+                  <span className="mb-1 block text-sm font-medium">Tipo de mensagem</span>
+                  <select
                     className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                    type="password"
-                    value={connectionForm.token}
-                    onChange={(event) => setConnectionForm({ ...connectionForm, token: event.target.value })}
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium">Phone Number ID</span>
-                  <input
-                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                    value={connectionForm.phoneNumberId}
-                    onChange={(event) => setConnectionForm({ ...connectionForm, phoneNumberId: event.target.value })}
-                  />
+                    value={connectionForm.messageType}
+                    onChange={(event) => setConnectionForm({ ...connectionForm, messageType: event.target.value })}
+                  >
+                    <option value="TEXT_IMAGE">Texto + imagem</option>
+                    <option value="TEXT_ONLY">Texto</option>
+                  </select>
                 </label>
               </div>
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium">Webhook</span>
-                <input
-                  className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                  value={connectionForm.webhookUrl}
-                  onChange={(event) => setConnectionForm({ ...connectionForm, webhookUrl: event.target.value })}
-                  placeholder="https://..."
-                />
-              </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium">Intervalo minimo</span>
@@ -389,37 +411,7 @@ export default function WhatsAppPage() {
                   />
                 </label>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium">Tipo de mensagem</span>
-                  <select
-                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                    value={connectionForm.messageType}
-                    onChange={(event) => setConnectionForm({ ...connectionForm, messageType: event.target.value })}
-                  >
-                    <option value="TEXT_IMAGE">Texto + imagem</option>
-                    <option value="TEXT_ONLY">Texto</option>
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium">Preview do link</span>
-                  <select
-                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                    value={connectionForm.previewFormat}
-                    onChange={(event) => setConnectionForm({ ...connectionForm, previewFormat: event.target.value })}
-                  >
-                    <option value="PORTRAIT">Retrato</option>
-                    <option value="LANDSCAPE">Paisagem</option>
-                    <option value="NONE">Sem preview</option>
-                  </select>
-                </label>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <Toggle
-                  checked={connectionForm.removePreviewTitle}
-                  label="Remover titulo"
-                  onChange={(checked) => setConnectionForm({ ...connectionForm, removePreviewTitle: checked })}
-                />
+              <div className="grid gap-2 sm:grid-cols-2">
                 <Toggle
                   checked={connectionForm.optimizeImage}
                   label="Otimizar imagem"
@@ -431,7 +423,10 @@ export default function WhatsAppPage() {
                   onChange={(checked) => setConnectionForm({ ...connectionForm, resizeImage: checked })}
                 />
               </div>
-              <button className="focus-ring flex w-full items-center justify-center gap-2 rounded-md bg-leaf px-3 py-2 font-semibold text-white hover:bg-leaf/90">
+              <button
+                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md bg-leaf px-3 py-2 font-semibold text-white hover:bg-leaf/90"
+                disabled={Boolean(busyAction)}
+              >
                 <Save size={17} aria-hidden />
                 {editingConnectionId ? "Salvar conexao" : "Cadastrar conexao"}
               </button>
@@ -590,17 +585,38 @@ export default function WhatsAppPage() {
                 ) : null}
                 {selectedConnection.lastError ? <p className="text-sm text-coral">{selectedConnection.lastError}</p> : null}
                 <div className="grid grid-cols-2 gap-2">
-                  <IconButton label="Conectar" icon={<PlugZap size={16} aria-hidden />} onClick={() => startConnection(selectedConnection.id)} />
-                  <IconButton label="Atualizar" icon={<RefreshCw size={16} aria-hidden />} onClick={() => refreshStatus(selectedConnection.id)} />
-                  <IconButton label="Reiniciar" icon={<RotateCcw size={16} aria-hidden />} onClick={() => restartConnection(selectedConnection.id)} />
-                  <IconButton label="Desconectar" icon={<LogOut size={16} aria-hidden />} onClick={() => logoutConnection(selectedConnection.id)} />
+                  <IconButton
+                    label={busyAction === "start" ? "Conectando..." : "Conectar"}
+                    icon={<PlugZap size={16} aria-hidden />}
+                    onClick={() => startConnection(selectedConnection.id)}
+                    disabled={Boolean(busyAction)}
+                  />
+                  <IconButton
+                    label={busyAction === "status" ? "Atualizando..." : "Atualizar"}
+                    icon={<RefreshCw size={16} aria-hidden />}
+                    onClick={() => refreshStatus(selectedConnection.id)}
+                    disabled={Boolean(busyAction)}
+                  />
+                  <IconButton
+                    label={busyAction === "restart" ? "Reiniciando..." : "Reiniciar"}
+                    icon={<RotateCcw size={16} aria-hidden />}
+                    onClick={() => restartConnection(selectedConnection.id)}
+                    disabled={Boolean(busyAction)}
+                  />
+                  <IconButton
+                    label={busyAction === "logout" ? "Saindo..." : "Desconectar"}
+                    icon={<LogOut size={16} aria-hidden />}
+                    onClick={() => logoutConnection(selectedConnection.id)}
+                    disabled={Boolean(busyAction)}
+                  />
                 </div>
                 <button
                   className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist"
                   onClick={() => findAvailableGroups(selectedConnection.id)}
+                  disabled={Boolean(busyAction)}
                 >
                   <Search size={16} aria-hidden />
-                  Listar grupos da sessao
+                  {busyAction === "groups" ? "Carregando grupos..." : "Listar grupos da sessao"}
                 </button>
                 {availableGroups.length ? (
                   <div className="space-y-2">
@@ -633,7 +649,7 @@ export default function WhatsAppPage() {
                   <button className="min-w-0 text-left" onClick={() => setSelectedConnectionId(connection.id)}>
                     <p className="truncate text-sm font-semibold">{connection.name}</p>
                     <p className="truncate text-xs text-[var(--muted)]">
-                      {connection.phoneNumber || connection.sessionName || "Sem numero"} - {connection.provider} - {connection._count?.groups ?? 0} grupos
+                      {connection.phoneNumber || connection.sessionName || "Sem numero"} - {connection._count?.groups ?? 0} grupos
                     </p>
                   </button>
                   <div className="flex shrink-0 items-center gap-2">
@@ -694,10 +710,21 @@ function Toggle({ checked, label, onChange }: { checked: boolean; label: string;
   );
 }
 
-function IconButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+function IconButton({
+  disabled,
+  icon,
+  label,
+  onClick
+}: {
+  disabled?: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
-      className="focus-ring flex items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist"
+      className="focus-ring flex items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist disabled:cursor-not-allowed disabled:opacity-60"
+      disabled={disabled}
       onClick={onClick}
       type="button"
     >
@@ -708,31 +735,18 @@ function IconButton({ icon, label, onClick }: { icon: ReactNode; label: string; 
 }
 
 function buildConnectionPayload(form: typeof emptyConnectionForm) {
-  const credentials =
-    form.token.trim() || form.secretKey.trim()
-      ? {
-          accessToken: form.token.trim() || undefined,
-          apiToken: form.token.trim() || undefined,
-          token: form.token.trim() || undefined,
-          secretKey: form.secretKey.trim() || undefined
-        }
-      : undefined;
+  const credentials = form.secretKey.trim() ? { secretKey: form.secretKey.trim() } : undefined;
   return {
     name: form.name,
     sessionName: form.sessionName || undefined,
     phoneNumber: form.phoneNumber || undefined,
-    provider: form.provider,
-    phoneNumberId: form.phoneNumberId || undefined,
     dailyLimit: Number(form.dailyLimit),
     minIntervalSeconds: Number(form.minIntervalSeconds),
     credentials,
     config: {
       sessionName: form.sessionName || undefined,
       apiBaseUrl: form.apiBaseUrl || undefined,
-      webhookUrl: form.webhookUrl || undefined,
       messageType: form.messageType,
-      previewFormat: form.previewFormat,
-      removePreviewTitle: form.removePreviewTitle,
       optimizeImage: form.optimizeImage,
       resizeImage: form.resizeImage
     },

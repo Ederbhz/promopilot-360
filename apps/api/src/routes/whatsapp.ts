@@ -21,9 +21,7 @@ const connectionSchema = z.object({
   name: z.string().min(2),
   sessionName: z.string().min(2).optional().nullable(),
   phoneNumber: z.string().optional().nullable(),
-  provider: z.nativeEnum(WhatsAppProvider).default(WhatsAppProvider.WPPCONNECT),
   status: z.nativeEnum(WhatsAppConnectionStatus).optional(),
-  phoneNumberId: z.string().optional().nullable(),
   dailyLimit: z.coerce.number().int().min(1).max(500).default(100),
   minIntervalSeconds: z.coerce.number().int().min(10).max(86400).default(60),
   credentials: z.record(z.unknown()).optional(),
@@ -48,6 +46,7 @@ router.get(
   "/connections",
   asyncHandler(async (_req, res) => {
     const connections = await prisma.whatsAppConnection.findMany({
+      where: { provider: WhatsAppProvider.WPPCONNECT },
       include: { _count: { select: { groups: true } } },
       orderBy: { createdAt: "desc" }
     });
@@ -65,9 +64,8 @@ router.post(
         name: data.name,
         sessionName,
         phoneNumber: data.phoneNumber,
-        provider: data.provider,
-        status: data.status ?? inferStatus(data.provider, data.credentials, data.config),
-        phoneNumberId: data.phoneNumberId,
+        provider: WhatsAppProvider.WPPCONNECT,
+        status: data.status ?? inferStatus(data.credentials),
         dailyLimit: data.dailyLimit,
         minIntervalSeconds: data.minIntervalSeconds,
         encryptedCredentials: data.credentials ? jsonInput(encryptJson(data.credentials)) : undefined,
@@ -98,13 +96,10 @@ router.put(
         name: data.name,
         sessionName,
         phoneNumber: data.phoneNumber,
-        provider: data.provider,
+        provider: WhatsAppProvider.WPPCONNECT,
         status:
           data.status ??
-          (data.provider || data.credentials || data.config
-            ? inferStatus(data.provider ?? existing.provider, data.credentials, data.config)
-            : undefined),
-        phoneNumberId: data.phoneNumberId,
+          (data.credentials || data.config ? inferStatus(data.credentials) : undefined),
         dailyLimit: data.dailyLimit,
         minIntervalSeconds: data.minIntervalSeconds,
         encryptedCredentials: data.credentials ? jsonInput(encryptJson(data.credentials)) : undefined,
@@ -213,6 +208,7 @@ router.get(
   "/groups",
   asyncHandler(async (_req, res) => {
     const groups = await prisma.whatsAppGroup.findMany({
+      where: { connection: { provider: WhatsAppProvider.WPPCONNECT } },
       include: { connection: true },
       orderBy: { createdAt: "desc" }
     });
@@ -224,6 +220,7 @@ router.post(
   "/groups",
   asyncHandler(async (req, res) => {
     const data = groupSchema.parse(req.body);
+    await ensureWppConnection(data.connectionId);
     const group = await prisma.whatsAppGroup.create({
       data,
       include: { connection: true }
@@ -236,6 +233,7 @@ router.put(
   "/groups/:id",
   asyncHandler(async (req, res) => {
     const data = groupSchema.partial().parse(req.body);
+    if (data.connectionId) await ensureWppConnection(data.connectionId);
     const group = await prisma.whatsAppGroup.update({
       where: { id: req.params.id },
       data,
@@ -270,20 +268,17 @@ async function resolveWppConnectionId(req: { body?: unknown; query?: Record<stri
   return connection.id;
 }
 
-function inferStatus(
-  provider: WhatsAppProvider,
-  credentials?: Record<string, unknown>,
-  config?: Record<string, unknown>
-) {
-  if (provider === WhatsAppProvider.ASSISTED) return WhatsAppConnectionStatus.WARNING;
-  if (provider === WhatsAppProvider.WPPCONNECT) return WhatsAppConnectionStatus.DISCONNECTED;
-  const hasCredentials = Boolean(
-    stringValue(credentials?.accessToken) ||
-      stringValue(credentials?.apiToken) ||
-      stringValue(credentials?.token) ||
-      stringValue(config?.webhookUrl)
-  );
-  return hasCredentials ? WhatsAppConnectionStatus.CONNECTED : WhatsAppConnectionStatus.DISCONNECTED;
+async function ensureWppConnection(connectionId: string) {
+  const connection = await prisma.whatsAppConnection.findUnique({ where: { id: connectionId } });
+  if (!connection || connection.provider !== WhatsAppProvider.WPPCONNECT) {
+    throw new HttpError(400, "Selecione uma conexao WPPConnect valida.");
+  }
+}
+
+function inferStatus(credentials?: Record<string, unknown>) {
+  return stringValue(credentials?.token) || stringValue(credentials?.secretKey)
+    ? WhatsAppConnectionStatus.DISCONNECTED
+    : WhatsAppConnectionStatus.DISCONNECTED;
 }
 
 function sanitizeConnection<T extends { encryptedCredentials?: unknown }>(connection: T) {

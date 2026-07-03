@@ -41,58 +41,15 @@ export async function sendWhatsAppMessage(input: WhatsAppSendInput) {
   if (!group.isActive || !group.connection.isActive) throw new Error("Grupo ou conexao de WhatsApp inativo.");
 
   try {
-    const credentials = safeDecrypt(group.connection.encryptedCredentials);
     const config = toRecord(group.connection.config);
     const messageType = stringValue(config.messageType) ?? "TEXT_IMAGE";
-
-    switch (group.connection.provider) {
-      case "WPPCONNECT":
-        return await sendWppConnectGroupMessage({
-          connection: group.connection,
-          group,
-          message: input.message,
-          imageUrl: messageType === "TEXT_IMAGE" ? input.imageUrl : undefined
-        });
-      case "CLOUD_API":
-        return await sendCloudApiGroupMessage({
-          groupExternalId: group.externalId,
-          phoneNumberId:
-            group.connection.phoneNumberId ??
-            stringValue(credentials.phoneNumberId) ??
-            stringValue(config.phoneNumberId),
-          accessToken:
-            stringValue(credentials.accessToken) ??
-            stringValue(credentials.apiToken) ??
-            stringValue(config.accessToken) ??
-            stringValue(config.apiToken),
-          message: input.message,
-          imageUrl: messageType === "TEXT_IMAGE" ? input.imageUrl : undefined,
-          previewUrl: config.removePreviewTitle !== true
-        });
-      case "WASSENGER":
-        return await sendWassengerGroupMessage({
-          groupExternalId: group.externalId,
-          token:
-            stringValue(credentials.apiToken) ??
-            stringValue(credentials.token) ??
-            stringValue(config.apiToken) ??
-            stringValue(config.token),
-          apiBaseUrl: stringValue(config.apiBaseUrl),
-          message: input.message
-        });
-      case "WEBHOOK":
-        return await sendWebhookMessage({
-          webhookUrl: stringValue(config.webhookUrl) ?? stringValue(credentials.webhookUrl),
-          token: stringValue(credentials.webhookToken) ?? stringValue(config.webhookToken),
-          groupExternalId: group.externalId,
-          groupName: group.name,
-          message: input.message,
-          imageUrl: input.imageUrl,
-          scheduledPostId: input.scheduledPostId
-        });
-      default:
-        throw new Error("Conexao WhatsApp em modo assistido. Copie ou abra a mensagem manualmente.");
-    }
+    ensureProvider(group.connection.provider, "WPPCONNECT");
+    return await sendWppConnectGroupMessage({
+      connection: group.connection,
+      group,
+      message: input.message,
+      imageUrl: messageType === "TEXT_IMAGE" ? input.imageUrl : undefined
+    });
   } catch (error) {
     if (!(error instanceof WhatsAppRateLimitError)) {
       await registerConnectionFailure(group.connection.id, error);
@@ -103,140 +60,110 @@ export async function sendWhatsAppMessage(input: WhatsAppSendInput) {
 
 export async function testWhatsAppConnection(connectionId: string) {
   const connection = await findConnection(connectionId);
-  if (connection.provider === "ASSISTED") {
-    return { ok: false, mode: "ASSISTED", message: "Conexao em modo assistido." };
-  }
-  if (connection.provider === "WPPCONNECT") {
-    const status = await getWhatsAppSessionStatus(connection.id);
-    return {
-      ok: status.status === WhatsAppConnectionStatus.CONNECTED,
-      mode: "WPPCONNECT",
-      message:
-        status.status === WhatsAppConnectionStatus.CONNECTED
-          ? "Sessao WPPConnect conectada."
-          : "Sessao WPPConnect ainda nao conectada.",
-      status: status.status,
-      qrCode: status.qrCode
-    };
-  }
-
-  const credentials = safeDecrypt(connection.encryptedCredentials);
-  const config = toRecord(connection.config);
-
-  if (connection.provider === "CLOUD_API") {
-    const phoneNumberId =
-      connection.phoneNumberId ?? stringValue(credentials.phoneNumberId) ?? stringValue(config.phoneNumberId);
-    const accessToken =
-      stringValue(credentials.accessToken) ??
-      stringValue(credentials.apiToken) ??
-      stringValue(config.accessToken) ??
-      stringValue(config.apiToken);
-    return {
-      ok: Boolean(phoneNumberId && accessToken),
-      mode: "CLOUD_API",
-      message: phoneNumberId && accessToken ? "Credenciais Cloud API configuradas." : "Informe Phone Number ID e Access Token."
-    };
-  }
-  if (connection.provider === "WASSENGER") {
-    const token =
-      stringValue(credentials.apiToken) ?? stringValue(credentials.token) ?? stringValue(config.apiToken) ?? stringValue(config.token);
-    return {
-      ok: Boolean(token),
-      mode: "WASSENGER",
-      message: token ? "Token Wassenger configurado." : "Informe API token."
-    };
-  }
-
-  const webhookUrl = stringValue(config.webhookUrl) ?? stringValue(credentials.webhookUrl);
+  ensureProvider(connection.provider, "WPPCONNECT");
+  const status = await getWhatsAppSessionStatus(connection.id);
   return {
-    ok: Boolean(webhookUrl),
-    mode: "WEBHOOK",
-    message: webhookUrl ? "Webhook configurado." : "Informe URL do webhook."
+    ok: status.status === WhatsAppConnectionStatus.CONNECTED,
+    mode: "WPPCONNECT",
+    message:
+      status.status === WhatsAppConnectionStatus.CONNECTED
+        ? "Sessao WPPConnect conectada."
+        : "Sessao WPPConnect ainda nao conectada.",
+    status: status.status,
+    qrCode: status.qrCode
   };
 }
 
 export async function startWhatsAppSession(connectionId: string) {
-  const connection = await findConnection(connectionId);
-  ensureProvider(connection.provider, "WPPCONNECT");
-  const session = resolveSessionName(connection);
-  await ensureWppToken(connection);
+  return withWppSessionErrorTracking(connectionId, async () => {
+    const connection = await findConnection(connectionId);
+    ensureProvider(connection.provider, "WPPCONNECT");
+    const session = resolveSessionName(connection);
+    await ensureWppToken(connection);
 
-  const config = toRecord(connection.config);
-  const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/start-session`, {
-    method: "POST",
-    body: JSON.stringify({
-      webhook: stringValue(config.webhookUrl) ?? "",
-      waitQrCode: false
-    })
-  });
+    const config = toRecord(connection.config);
+    const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/start-session`, {
+      method: "POST",
+      body: JSON.stringify({
+        webhook: stringValue(config.webhookUrl) ?? "",
+        waitQrCode: false
+      })
+    });
 
-  const qrPayload = await tryGetWppQrCode(connection);
-  const qrCode = extractQrCode(qrPayload) ?? extractQrCode(payload);
-  const status = normalizeWppStatus(payload, qrCode);
-  return updateConnectionSession(connection.id, {
-    status,
-    qrCode,
-    lastConnectedAt: status === WhatsAppConnectionStatus.CONNECTED ? new Date() : undefined,
-    lastError: null,
-    sessionName: session,
-    isActive: true
+    const qrPayload = await waitForWppQrCode(connection);
+    const qrCode = extractQrCode(qrPayload) ?? extractQrCode(payload);
+    const status = normalizeWppStatus(qrPayload ?? payload, qrCode);
+    return updateConnectionSession(connection.id, {
+      status,
+      qrCode,
+      lastConnectedAt: status === WhatsAppConnectionStatus.CONNECTED ? new Date() : undefined,
+      lastError: null,
+      sessionName: session,
+      isActive: true
+    });
   });
 }
 
 export async function getWhatsAppSessionStatus(connectionId: string) {
-  const connection = await findConnection(connectionId);
-  ensureProvider(connection.provider, "WPPCONNECT");
-  const session = resolveSessionName(connection);
-  await ensureWppToken(connection);
+  return withWppSessionErrorTracking(connectionId, async () => {
+    const connection = await findConnection(connectionId);
+    ensureProvider(connection.provider, "WPPCONNECT");
+    const session = resolveSessionName(connection);
+    await ensureWppToken(connection);
 
-  const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/status-session`, {
-    method: "GET"
-  });
-  const status = normalizeWppStatus(payload);
-  const qrPayload =
-    status === WhatsAppConnectionStatus.CONNECTED ? undefined : await tryGetWppQrCode(connection);
-  const qrCode = extractQrCode(qrPayload) ?? extractQrCode(payload);
-  const normalizedStatus = normalizeWppStatus(qrPayload ?? payload, qrCode);
-  return updateConnectionSession(connection.id, {
-    status: normalizedStatus,
-    qrCode,
-    lastConnectedAt:
-      normalizedStatus === WhatsAppConnectionStatus.CONNECTED ? new Date() : (connection.lastConnectedAt ?? undefined),
-    lastError: null,
-    sessionName: session
+    const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/status-session`, {
+      method: "GET"
+    });
+    const status = normalizeWppStatus(payload);
+    const qrPayload =
+      status === WhatsAppConnectionStatus.CONNECTED ? undefined : await tryGetWppQrCode(connection);
+    const qrCode = extractQrCode(qrPayload) ?? extractQrCode(payload);
+    const normalizedStatus = normalizeWppStatus(qrPayload ?? payload, qrCode);
+    return updateConnectionSession(connection.id, {
+      status: normalizedStatus,
+      qrCode,
+      lastConnectedAt:
+        normalizedStatus === WhatsAppConnectionStatus.CONNECTED ? new Date() : (connection.lastConnectedAt ?? undefined),
+      lastError: null,
+      sessionName: session
+    });
   });
 }
 
 export async function logoutWhatsAppSession(connectionId: string) {
-  const connection = await findConnection(connectionId);
-  ensureProvider(connection.provider, "WPPCONNECT");
-  const session = resolveSessionName(connection);
-  await ensureWppToken(connection);
-  const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/logout-session`, {
-    method: "POST"
+  return withWppSessionErrorTracking(connectionId, async () => {
+    const connection = await findConnection(connectionId);
+    ensureProvider(connection.provider, "WPPCONNECT");
+    const session = resolveSessionName(connection);
+    await ensureWppToken(connection);
+    const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/logout-session`, {
+      method: "POST"
+    });
+    const updated = await updateConnectionSession(connection.id, {
+      status: WhatsAppConnectionStatus.DISCONNECTED,
+      qrCode: null,
+      lastError: null
+    });
+    return { connection: updated, providerResponse: payload };
   });
-  const updated = await updateConnectionSession(connection.id, {
-    status: WhatsAppConnectionStatus.DISCONNECTED,
-    qrCode: null,
-    lastError: null
-  });
-  return { connection: updated, providerResponse: payload };
 }
 
 export async function closeWhatsAppSession(connectionId: string) {
-  const connection = await findConnection(connectionId);
-  ensureProvider(connection.provider, "WPPCONNECT");
-  const session = resolveSessionName(connection);
-  await ensureWppToken(connection);
-  const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/close-session`, {
-    method: "POST"
+  return withWppSessionErrorTracking(connectionId, async () => {
+    const connection = await findConnection(connectionId);
+    ensureProvider(connection.provider, "WPPCONNECT");
+    const session = resolveSessionName(connection);
+    await ensureWppToken(connection);
+    const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/close-session`, {
+      method: "POST"
+    });
+    const updated = await updateConnectionSession(connection.id, {
+      status: WhatsAppConnectionStatus.DISCONNECTED,
+      qrCode: null,
+      lastError: null
+    });
+    return { connection: updated, providerResponse: payload };
   });
-  const updated = await updateConnectionSession(connection.id, {
-    status: WhatsAppConnectionStatus.DISCONNECTED,
-    qrCode: null,
-    lastError: null
-  });
-  return { connection: updated, providerResponse: payload };
 }
 
 export async function restartWhatsAppSession(connectionId: string) {
@@ -245,21 +172,23 @@ export async function restartWhatsAppSession(connectionId: string) {
 }
 
 export async function listAvailableWhatsAppGroups(connectionId: string) {
-  const connection = await findConnection(connectionId);
-  ensureProvider(connection.provider, "WPPCONNECT");
-  const session = resolveSessionName(connection);
-  await ensureWppToken(connection);
+  return withWppSessionErrorTracking(connectionId, async () => {
+    const connection = await findConnection(connectionId);
+    ensureProvider(connection.provider, "WPPCONNECT");
+    const session = resolveSessionName(connection);
+    await ensureWppToken(connection);
 
-  const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/list-chats`, {
-    method: "POST",
-    body: JSON.stringify({
-      count: 100,
-      onlyGroups: true,
-      onlyUsers: false,
-      onlyWithUnreadMessage: false
-    })
+    const payload = await wppRequest(connection, `/api/${encodeURIComponent(session)}/list-chats`, {
+      method: "POST",
+      body: JSON.stringify({
+        count: 100,
+        onlyGroups: true,
+        onlyUsers: false,
+        onlyWithUnreadMessage: false
+      })
+    });
+    return readWppGroups(payload);
   });
-  return readWppGroups(payload);
 }
 
 async function sendWppConnectGroupMessage(input: {
@@ -319,94 +248,6 @@ async function sendWppText(connection: WhatsAppConnection, groupExternalId: stri
   });
 }
 
-async function sendCloudApiGroupMessage(input: {
-  groupExternalId: string;
-  phoneNumberId?: string;
-  accessToken?: string;
-  message: string;
-  imageUrl?: string | null;
-  previewUrl: boolean;
-}) {
-  if (!input.phoneNumberId || !input.accessToken) {
-    throw new Error("WhatsApp Cloud API sem Phone Number ID ou Access Token.");
-  }
-
-  const body = input.imageUrl
-    ? {
-        messaging_product: "whatsapp",
-        recipient_type: "group",
-        to: input.groupExternalId,
-        type: "image",
-        image: { link: input.imageUrl, caption: input.message }
-      }
-    : {
-        messaging_product: "whatsapp",
-        recipient_type: "group",
-        to: input.groupExternalId,
-        type: "text",
-        text: { body: input.message, preview_url: input.previewUrl }
-      };
-
-  const response = await fetch(
-    `https://graph.facebook.com/${env.WHATSAPP_GRAPH_VERSION}/${input.phoneNumberId}/messages`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${input.accessToken}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify(body)
-    }
-  );
-
-  return readProviderResponse(response, "WhatsApp Cloud API");
-}
-
-async function sendWassengerGroupMessage(input: {
-  groupExternalId: string;
-  token?: string;
-  apiBaseUrl?: string;
-  message: string;
-}) {
-  if (!input.token) throw new Error("Wassenger sem API token.");
-  const response = await fetch(`${input.apiBaseUrl ?? "https://api.wassenger.com"}/v1/messages`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      token: input.token
-    },
-    body: JSON.stringify({ group: input.groupExternalId, message: input.message })
-  });
-  return readProviderResponse(response, "Wassenger");
-}
-
-async function sendWebhookMessage(input: {
-  webhookUrl?: string;
-  token?: string;
-  groupExternalId: string;
-  groupName: string;
-  message: string;
-  imageUrl?: string | null;
-  scheduledPostId?: string;
-}) {
-  if (!input.webhookUrl) throw new Error("Webhook WhatsApp sem URL.");
-  const response = await fetch(input.webhookUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(input.token ? { authorization: `Bearer ${input.token}` } : {})
-    },
-    body: JSON.stringify({
-      groupId: input.groupExternalId,
-      groupName: input.groupName,
-      message: input.message,
-      imageUrl: input.imageUrl,
-      scheduledPostId: input.scheduledPostId
-    })
-  });
-  return readProviderResponse(response, "Webhook WhatsApp");
-}
-
 async function wppRequest(connection: WhatsAppConnection, path: string, init: RequestInit = {}) {
   const token = await ensureWppToken(connection);
   const response = await fetch(`${resolveWppBaseUrl(connection)}${path}`, {
@@ -429,6 +270,17 @@ async function tryGetWppQrCode(connection: WhatsAppConnection) {
   } catch (error) {
     return { error: error instanceof Error ? error.message : "QRCode indisponivel." };
   }
+}
+
+async function waitForWppQrCode(connection: WhatsAppConnection) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const payload = await tryGetWppQrCode(connection);
+    if (extractQrCode(payload) || normalizeWppStatus(payload) === WhatsAppConnectionStatus.CONNECTED) {
+      return payload;
+    }
+    await delay(1200);
+  }
+  return tryGetWppQrCode(connection);
 }
 
 async function ensureWppToken(connection: WhatsAppConnection) {
@@ -469,6 +321,28 @@ async function ensureWppToken(connection: WhatsAppConnection) {
   });
   wppTokenCache.set(cacheKey, token);
   return token;
+}
+
+async function withWppSessionErrorTracking<T>(connectionId: string, action: () => Promise<T>) {
+  try {
+    return await action();
+  } catch (error) {
+    await markWppSessionError(connectionId, error);
+    throw error;
+  }
+}
+
+async function markWppSessionError(connectionId: string, error: unknown) {
+  const message = error instanceof Error ? error.message : "Erro desconhecido.";
+  await prisma.whatsAppConnection
+    .update({
+      where: { id: connectionId },
+      data: {
+        status: WhatsAppConnectionStatus.ERROR,
+        lastError: message
+      }
+    })
+    .catch(() => undefined);
 }
 
 async function updateConnectionSession(
@@ -732,4 +606,8 @@ function stringValue(value: unknown) {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return undefined;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
