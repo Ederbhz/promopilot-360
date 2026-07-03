@@ -24,6 +24,7 @@ interface ProviderResult {
 const wppTokenCache = new Map<string, string>();
 const WPP_WAKE_RETRY_STATUS = new Set([502, 503, 504]);
 const WPP_WAKE_RETRY_DELAYS_MS = [1500, 3000, 5000, 8000, 13000, 21000];
+const WPP_DEFAULT_SECRET_KEY = "THISISMYSECURETOKEN";
 
 export class WhatsAppRateLimitError extends Error {
   constructor(
@@ -310,11 +311,7 @@ async function ensureWppToken(connection: WhatsAppConnection) {
   }
 
   const session = resolveSessionName(connection);
-  const response = await fetchWppWithRetry(
-    `${baseUrl}/api/${encodeURIComponent(session)}/${encodeURIComponent(secretKey)}/generate-token`,
-    { method: "POST" }
-  );
-  const payload = await readProviderResponse(response, "WPPConnect Server");
+  const payload = await generateWppToken(baseUrl, session, secretKey);
   const token = stringValue(payload.token) ?? stringValue(payload.full)?.split(":").pop();
   if (!token) throw new Error("WPPConnect nao retornou token de sessao.");
 
@@ -326,6 +323,24 @@ async function ensureWppToken(connection: WhatsAppConnection) {
   });
   wppTokenCache.set(cacheKey, token);
   return token;
+}
+
+async function generateWppToken(baseUrl: string, session: string, secretKey: string) {
+  const secrets = uniqueValues([secretKey, WPP_DEFAULT_SECRET_KEY]);
+  let lastError: unknown;
+  for (const secret of secrets) {
+    try {
+      const response = await fetchWppWithRetry(
+        `${baseUrl}/api/${encodeURIComponent(session)}/${encodeURIComponent(secret)}/generate-token`,
+        { method: "POST" }
+      );
+      return await readProviderResponse(response, "WPPConnect Server");
+    } catch (error) {
+      lastError = error;
+      if (!isWppSecretError(error)) throw error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("WPPConnect recusou a chave secreta.");
 }
 
 async function withWppSessionErrorTracking<T>(connectionId: string, action: () => Promise<T>) {
@@ -630,6 +645,14 @@ function readProviderError(payload: unknown, text: string) {
     return "servico indisponivel no Render. Aguarde o WPPConnect terminar de iniciar e tente novamente.";
   }
   return text.replace(/\s+/g, " ").trim().slice(0, 240) || "resposta sem detalhes.";
+}
+
+function isWppSecretError(error: unknown) {
+  return error instanceof Error && /SECRET_KEY/i.test(error.message);
+}
+
+function uniqueValues(values: string[]) {
+  return [...new Set(values.filter((value) => value.trim()))];
 }
 
 function firstArray(...values: unknown[]) {
