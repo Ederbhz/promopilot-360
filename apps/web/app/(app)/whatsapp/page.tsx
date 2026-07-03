@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { Edit3, PlugZap, Plus, Save, Trash2, X } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { Edit3, LogOut, PlugZap, Plus, QrCode, RefreshCw, RotateCcw, Save, Search, Trash2, X } from "lucide-react";
 import { ErrorLine } from "@/components/AsyncState";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
@@ -11,10 +12,16 @@ import { apiFetch, postJson, putJson } from "@/lib/api";
 interface WhatsAppConnection {
   id: string;
   name: string;
+  sessionName?: string | null;
   phoneNumber?: string | null;
   provider: string;
   status: string;
   phoneNumberId?: string | null;
+  qrCode?: string | null;
+  lastConnectedAt?: string | null;
+  lastError?: string | null;
+  dailyLimit: number;
+  minIntervalSeconds: number;
   config?: Record<string, unknown> | null;
   isActive: boolean;
   _count?: { groups: number };
@@ -25,19 +32,33 @@ interface WhatsAppGroup {
   connectionId: string;
   name: string;
   externalId: string;
+  description?: string | null;
+  category?: string | null;
   type: string;
+  minIntervalSeconds: number;
+  dailyLimit: number;
+  notes?: string | null;
   isActive: boolean;
   connection?: { name: string; provider: string };
 }
 
+interface AvailableGroup {
+  externalId: string;
+  name: string;
+}
+
 const emptyConnectionForm = {
   name: "",
+  sessionName: "promopilot360",
   phoneNumber: "",
-  provider: "CLOUD_API",
+  provider: "WPPCONNECT",
   phoneNumberId: "",
   token: "",
+  secretKey: "",
   apiBaseUrl: "",
   webhookUrl: "",
+  dailyLimit: 100,
+  minIntervalSeconds: 60,
   messageType: "TEXT_IMAGE",
   previewFormat: "PORTRAIT",
   removePreviewTitle: false,
@@ -49,18 +70,30 @@ const emptyGroupForm = {
   connectionId: "",
   name: "",
   externalId: "",
+  description: "",
+  category: "",
+  minIntervalSeconds: 60,
+  dailyLimit: 100,
+  notes: "",
   isActive: true
 };
 
 export default function WhatsAppPage() {
   const [connections, setConnections] = useState<WhatsAppConnection[]>([]);
   const [groups, setGroups] = useState<WhatsAppGroup[]>([]);
+  const [availableGroups, setAvailableGroups] = useState<AvailableGroup[]>([]);
   const [connectionForm, setConnectionForm] = useState(emptyConnectionForm);
   const [groupForm, setGroupForm] = useState(emptyGroupForm);
   const [editingConnectionId, setEditingConnectionId] = useState("");
   const [editingGroupId, setEditingGroupId] = useState("");
+  const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  const selectedConnection = useMemo(
+    () => connections.find((connection) => connection.id === selectedConnectionId) ?? connections[0],
+    [connections, selectedConnectionId]
+  );
 
   async function load() {
     const [connectionData, groupData] = await Promise.all([
@@ -69,14 +102,24 @@ export default function WhatsAppPage() {
     ]);
     setConnections(connectionData);
     setGroups(groupData);
-    if (!groupForm.connectionId && connectionData[0]) {
-      setGroupForm((current) => ({ ...current, connectionId: connectionData[0]!.id }));
+    const firstConnectionId = connectionData[0]?.id ?? "";
+    if (!selectedConnectionId && firstConnectionId) setSelectedConnectionId(firstConnectionId);
+    if (!groupForm.connectionId && firstConnectionId) {
+      setGroupForm((current) => ({ ...current, connectionId: firstConnectionId }));
     }
   }
 
   useEffect(() => {
     load().catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar WhatsApp."));
   }, []);
+
+  useEffect(() => {
+    if (!selectedConnection?.id || selectedConnection.provider !== "WPPCONNECT") return;
+    const interval = window.setInterval(() => {
+      refreshStatus(selectedConnection.id, false).catch(() => undefined);
+    }, 8000);
+    return () => window.clearInterval(interval);
+  }, [selectedConnection?.id, selectedConnection?.provider]);
 
   async function saveConnection(event: FormEvent) {
     event.preventDefault();
@@ -107,7 +150,12 @@ export default function WhatsAppPage() {
         connectionId: groupForm.connectionId,
         name: groupForm.name,
         externalId: groupForm.externalId,
+        description: groupForm.description || undefined,
+        category: groupForm.category || undefined,
         type: "GROUP",
+        minIntervalSeconds: Number(groupForm.minIntervalSeconds),
+        dailyLimit: Number(groupForm.dailyLimit),
+        notes: groupForm.notes || undefined,
         isActive: groupForm.isActive
       };
       if (editingGroupId) {
@@ -115,7 +163,7 @@ export default function WhatsAppPage() {
       } else {
         await postJson("/whatsapp/groups", body);
       }
-      setGroupForm({ ...emptyGroupForm, connectionId: connections[0]?.id ?? "" });
+      setGroupForm({ ...emptyGroupForm, connectionId: selectedConnection?.id ?? connections[0]?.id ?? "" });
       setEditingGroupId("");
       await load();
       setMessage(editingGroupId ? "Grupo atualizado." : "Grupo cadastrado.");
@@ -124,29 +172,69 @@ export default function WhatsAppPage() {
     }
   }
 
+  async function startConnection(id: string) {
+    setError("");
+    const connection = await postJson<WhatsAppConnection>(`/whatsapp/connections/${id}/start`, {});
+    await load();
+    setSelectedConnectionId(connection.id);
+    setMessage(connection.status === "CONNECTED" ? "Sessao conectada." : "QRCode atualizado.");
+  }
+
+  async function logoutConnection(id: string) {
+    setError("");
+    await postJson(`/whatsapp/connections/${id}/logout`, {});
+    await load();
+    setMessage("Sessao desconectada.");
+  }
+
+  async function restartConnection(id: string) {
+    setError("");
+    const connection = await postJson<WhatsAppConnection>(`/whatsapp/connections/${id}/restart`, {});
+    await load();
+    setSelectedConnectionId(connection.id);
+    setMessage("Sessao reiniciada.");
+  }
+
+  async function refreshStatus(id: string, showMessage = true) {
+    const connection = await apiFetch<WhatsAppConnection>(`/whatsapp/connections/${id}/session/status`);
+    setConnections((current) => current.map((item) => (item.id === id ? connection : item)));
+    if (showMessage) setMessage(`Status: ${connection.status}`);
+  }
+
   async function testConnection(id: string) {
     const result = await postJson<{ message?: string; ok: boolean }>(`/whatsapp/connections/${id}/test`, {});
     await load();
     setMessage(result.message || (result.ok ? "Conexao ativa." : "Conexao pendente."));
   }
 
+  async function findAvailableGroups(id: string) {
+    setError("");
+    setAvailableGroups(await apiFetch<AvailableGroup[]>(`/whatsapp/connections/${id}/available-groups`));
+    setMessage("Grupos carregados da sessao.");
+  }
+
   async function deleteGroup(id: string) {
     await apiFetch(`/whatsapp/groups/${id}`, { method: "DELETE" });
     await load();
-    setMessage("Grupo excluido.");
+    setMessage("Grupo inativado.");
   }
 
   function editConnection(connection: WhatsAppConnection) {
     const config = connection.config ?? {};
     setEditingConnectionId(connection.id);
+    setSelectedConnectionId(connection.id);
     setConnectionForm({
       name: connection.name,
+      sessionName: connection.sessionName ?? (stringValue(config.sessionName) || "promopilot360"),
       phoneNumber: connection.phoneNumber ?? "",
       provider: connection.provider,
       phoneNumberId: connection.phoneNumberId ?? "",
       token: "",
+      secretKey: "",
       apiBaseUrl: stringValue(config.apiBaseUrl),
       webhookUrl: stringValue(config.webhookUrl),
+      dailyLimit: connection.dailyLimit ?? 100,
+      minIntervalSeconds: connection.minIntervalSeconds ?? 60,
       messageType: stringValue(config.messageType) || "TEXT_IMAGE",
       previewFormat: stringValue(config.previewFormat) || "PORTRAIT",
       removePreviewTitle: config.removePreviewTitle === true,
@@ -161,13 +249,27 @@ export default function WhatsAppPage() {
       connectionId: group.connectionId,
       name: group.name,
       externalId: group.externalId,
+      description: group.description ?? "",
+      category: group.category ?? "",
+      minIntervalSeconds: group.minIntervalSeconds ?? 60,
+      dailyLimit: group.dailyLimit ?? 100,
+      notes: group.notes ?? "",
       isActive: group.isActive
     });
   }
 
+  function useAvailableGroup(group: AvailableGroup) {
+    setGroupForm((current) => ({
+      ...current,
+      connectionId: selectedConnection?.id ?? current.connectionId,
+      name: group.name,
+      externalId: group.externalId
+    }));
+  }
+
   return (
     <>
-      <PageHeader title="WhatsApp" eyebrow="Envios" />
+      <PageHeader title="WhatsApp" eyebrow="WPPConnect" />
       <div className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
         <div className="space-y-4">
           <Panel>
@@ -183,6 +285,17 @@ export default function WhatsAppPage() {
                   />
                 </label>
                 <label className="block">
+                  <span className="mb-1 block text-sm font-medium">Sessao</span>
+                  <input
+                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                    value={connectionForm.sessionName}
+                    onChange={(event) => setConnectionForm({ ...connectionForm, sessionName: event.target.value })}
+                    required={connectionForm.provider === "WPPCONNECT"}
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
                   <span className="mb-1 block text-sm font-medium">Numero</span>
                   <input
                     className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
@@ -191,8 +304,6 @@ export default function WhatsAppPage() {
                     placeholder="5531999999999"
                   />
                 </label>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium">Provedor</span>
                   <select
@@ -200,11 +311,43 @@ export default function WhatsAppPage() {
                     value={connectionForm.provider}
                     onChange={(event) => setConnectionForm({ ...connectionForm, provider: event.target.value })}
                   >
-                    <option value="CLOUD_API">WhatsApp Cloud API</option>
+                    <option value="WPPCONNECT">WPPConnect Server</option>
                     <option value="WASSENGER">Wassenger</option>
                     <option value="WEBHOOK">Webhook/API propria</option>
+                    <option value="CLOUD_API">WhatsApp Cloud API</option>
                     <option value="ASSISTED">Assistido</option>
                   </select>
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium">URL da API</span>
+                  <input
+                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                    value={connectionForm.apiBaseUrl}
+                    onChange={(event) => setConnectionForm({ ...connectionForm, apiBaseUrl: event.target.value })}
+                    placeholder="http://localhost:21465"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium">Secret key</span>
+                  <input
+                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                    type="password"
+                    value={connectionForm.secretKey}
+                    onChange={(event) => setConnectionForm({ ...connectionForm, secretKey: event.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium">Token</span>
+                  <input
+                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                    type="password"
+                    value={connectionForm.token}
+                    onChange={(event) => setConnectionForm({ ...connectionForm, token: event.target.value })}
+                  />
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium">Phone Number ID</span>
@@ -216,31 +359,33 @@ export default function WhatsAppPage() {
                 </label>
               </div>
               <label className="block">
-                <span className="mb-1 block text-sm font-medium">Token</span>
+                <span className="mb-1 block text-sm font-medium">Webhook</span>
                 <input
                   className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                  type="password"
-                  value={connectionForm.token}
-                  onChange={(event) => setConnectionForm({ ...connectionForm, token: event.target.value })}
+                  value={connectionForm.webhookUrl}
+                  onChange={(event) => setConnectionForm({ ...connectionForm, webhookUrl: event.target.value })}
+                  placeholder="https://..."
                 />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium">URL da API</span>
+                  <span className="mb-1 block text-sm font-medium">Intervalo minimo</span>
                   <input
                     className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                    value={connectionForm.apiBaseUrl}
-                    onChange={(event) => setConnectionForm({ ...connectionForm, apiBaseUrl: event.target.value })}
-                    placeholder="Opcional"
+                    type="number"
+                    min={10}
+                    value={connectionForm.minIntervalSeconds}
+                    onChange={(event) => setConnectionForm({ ...connectionForm, minIntervalSeconds: Number(event.target.value) })}
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-sm font-medium">Webhook</span>
+                  <span className="mb-1 block text-sm font-medium">Limite diario</span>
                   <input
                     className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                    value={connectionForm.webhookUrl}
-                    onChange={(event) => setConnectionForm({ ...connectionForm, webhookUrl: event.target.value })}
-                    placeholder="https://..."
+                    type="number"
+                    min={1}
+                    value={connectionForm.dailyLimit}
+                    onChange={(event) => setConnectionForm({ ...connectionForm, dailyLimit: Number(event.target.value) })}
                   />
                 </label>
               </div>
@@ -345,6 +490,54 @@ export default function WhatsAppPage() {
                   />
                 </label>
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium">Categoria</span>
+                  <input
+                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                    value={groupForm.category}
+                    onChange={(event) => setGroupForm({ ...groupForm, category: event.target.value })}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium">Descricao</span>
+                  <input
+                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                    value={groupForm.description}
+                    onChange={(event) => setGroupForm({ ...groupForm, description: event.target.value })}
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium">Intervalo minimo</span>
+                  <input
+                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                    type="number"
+                    min={10}
+                    value={groupForm.minIntervalSeconds}
+                    onChange={(event) => setGroupForm({ ...groupForm, minIntervalSeconds: Number(event.target.value) })}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium">Limite diario</span>
+                  <input
+                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                    type="number"
+                    min={1}
+                    value={groupForm.dailyLimit}
+                    onChange={(event) => setGroupForm({ ...groupForm, dailyLimit: Number(event.target.value) })}
+                  />
+                </label>
+              </div>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium">Observacao</span>
+                <input
+                  className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                  value={groupForm.notes}
+                  onChange={(event) => setGroupForm({ ...groupForm, notes: event.target.value })}
+                />
+              </label>
               <Toggle
                 checked={groupForm.isActive}
                 label="Grupo ativo"
@@ -361,17 +554,88 @@ export default function WhatsAppPage() {
         <div className="space-y-4">
           {error ? <ErrorLine message={error} /> : null}
           {message ? <p className="rounded-md bg-leaf/10 px-3 py-2 text-sm text-leaf">{message}</p> : null}
+
+          <Panel>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="font-semibold text-ink">Sessao WhatsApp</h2>
+              {selectedConnection ? <StatusBadge value={selectedConnection.status} /> : null}
+            </div>
+            {selectedConnection ? (
+              <div className="space-y-3">
+                <select
+                  className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                  value={selectedConnection.id}
+                  onChange={(event) => setSelectedConnectionId(event.target.value)}
+                >
+                  {connections.map((connection) => (
+                    <option value={connection.id} key={connection.id}>
+                      {connection.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedConnection.qrCode ? (
+                  <div className="flex justify-center rounded-md border border-[var(--border)] bg-white p-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={selectedConnection.qrCode} alt="QRCode WhatsApp" className="h-56 w-56 object-contain" />
+                  </div>
+                ) : (
+                  <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-[var(--border)] text-sm text-[var(--muted)]">
+                    <QrCode size={28} aria-hidden />
+                  </div>
+                )}
+                {selectedConnection.lastConnectedAt ? (
+                  <p className="text-xs text-[var(--muted)]">
+                    Ultima conexao: {new Date(selectedConnection.lastConnectedAt).toLocaleString("pt-BR")}
+                  </p>
+                ) : null}
+                {selectedConnection.lastError ? <p className="text-sm text-coral">{selectedConnection.lastError}</p> : null}
+                <div className="grid grid-cols-2 gap-2">
+                  <IconButton label="Conectar" icon={<PlugZap size={16} aria-hidden />} onClick={() => startConnection(selectedConnection.id)} />
+                  <IconButton label="Atualizar" icon={<RefreshCw size={16} aria-hidden />} onClick={() => refreshStatus(selectedConnection.id)} />
+                  <IconButton label="Reiniciar" icon={<RotateCcw size={16} aria-hidden />} onClick={() => restartConnection(selectedConnection.id)} />
+                  <IconButton label="Desconectar" icon={<LogOut size={16} aria-hidden />} onClick={() => logoutConnection(selectedConnection.id)} />
+                </div>
+                <button
+                  className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist"
+                  onClick={() => findAvailableGroups(selectedConnection.id)}
+                >
+                  <Search size={16} aria-hidden />
+                  Listar grupos da sessao
+                </button>
+                {availableGroups.length ? (
+                  <div className="space-y-2">
+                    {availableGroups.map((group) => (
+                      <button
+                        className="focus-ring flex w-full items-center justify-between gap-3 rounded-md border border-[var(--border)] px-3 py-2 text-left hover:bg-mist"
+                        key={group.externalId}
+                        onClick={() => useAvailableGroup(group)}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold">{group.name}</span>
+                          <span className="block truncate text-xs text-[var(--muted)]">{group.externalId}</span>
+                        </span>
+                        <Plus size={16} aria-hidden />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-sm text-[var(--muted)]">Nenhuma conexao cadastrada.</p>
+            )}
+          </Panel>
+
           <Panel>
             <h2 className="mb-3 font-semibold text-ink">Numeros conectados</h2>
             <div className="space-y-2">
               {connections.map((connection) => (
                 <div key={connection.id} className="flex items-center justify-between gap-3 rounded-md border border-[var(--border)] px-3 py-2">
-                  <div>
-                    <p className="text-sm font-semibold">{connection.name}</p>
-                    <p className="text-xs text-[var(--muted)]">
-                      {connection.phoneNumber || "Sem numero"} - {connection.provider} - {connection._count?.groups ?? 0} grupos
+                  <button className="min-w-0 text-left" onClick={() => setSelectedConnectionId(connection.id)}>
+                    <p className="truncate text-sm font-semibold">{connection.name}</p>
+                    <p className="truncate text-xs text-[var(--muted)]">
+                      {connection.phoneNumber || connection.sessionName || "Sem numero"} - {connection.provider} - {connection._count?.groups ?? 0} grupos
                     </p>
-                  </div>
+                  </button>
                   <div className="flex shrink-0 items-center gap-2">
                     <StatusBadge value={connection.status} />
                     <button className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist" onClick={() => editConnection(connection)} title="Editar">
@@ -397,13 +661,16 @@ export default function WhatsAppPage() {
                     <p className="truncate text-xs text-[var(--muted)]">
                       {group.connection?.name ?? "Conexao"} - {group.externalId}
                     </p>
+                    <p className="text-xs text-[var(--muted)]">
+                      {group.minIntervalSeconds}s - {group.dailyLimit}/dia
+                    </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <StatusBadge value={group.isActive ? "ACTIVE" : "PAUSED"} />
                     <button className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist" onClick={() => editGroup(group)} title="Editar grupo">
                       <Edit3 size={16} aria-hidden />
                     </button>
-                    <button className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist" onClick={() => deleteGroup(group.id)} title="Excluir grupo">
+                    <button className="focus-ring rounded-md border border-[var(--border)] p-2 hover:bg-mist" onClick={() => deleteGroup(group.id)} title="Inativar grupo">
                       <Trash2 size={16} aria-hidden />
                     </button>
                   </div>
@@ -427,21 +694,40 @@ function Toggle({ checked, label, onChange }: { checked: boolean; label: string;
   );
 }
 
+function IconButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      className="focus-ring flex items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist"
+      onClick={onClick}
+      type="button"
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 function buildConnectionPayload(form: typeof emptyConnectionForm) {
-  const credentials = form.token.trim()
-    ? {
-        accessToken: form.token.trim(),
-        apiToken: form.token.trim(),
-        token: form.token.trim()
-      }
-    : undefined;
+  const credentials =
+    form.token.trim() || form.secretKey.trim()
+      ? {
+          accessToken: form.token.trim() || undefined,
+          apiToken: form.token.trim() || undefined,
+          token: form.token.trim() || undefined,
+          secretKey: form.secretKey.trim() || undefined
+        }
+      : undefined;
   return {
     name: form.name,
+    sessionName: form.sessionName || undefined,
     phoneNumber: form.phoneNumber || undefined,
     provider: form.provider,
     phoneNumberId: form.phoneNumberId || undefined,
+    dailyLimit: Number(form.dailyLimit),
+    minIntervalSeconds: Number(form.minIntervalSeconds),
     credentials,
     config: {
+      sessionName: form.sessionName || undefined,
       apiBaseUrl: form.apiBaseUrl || undefined,
       webhookUrl: form.webhookUrl || undefined,
       messageType: form.messageType,

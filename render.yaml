@@ -40,6 +40,18 @@ services:
         sync: false
       - key: TELEGRAM_DEFAULT_CHAT_ID
         sync: false
+      - key: WPP_SERVER_URL
+        sync: false
+      - key: WPP_SESSION_NAME
+        value: promopilot360
+      - key: WPP_SECRET_KEY
+        sync: false
+      - key: WHATSAPP_DEFAULT_INTERVAL_SECONDS
+        value: 60
+      - key: WHATSAPP_DAILY_LIMIT
+        value: 100
+      - key: WHATSAPP_MAX_CONSECUTIVE_FAILURES
+        value: 5
       - key: AWIN_API_TOKEN
         sync: false
       - key: AWIN_PUBLISHER_ID

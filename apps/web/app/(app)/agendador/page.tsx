@@ -18,6 +18,7 @@ interface ScheduledPost {
   errorMessage?: string | null;
   campaign?: { name: string } | null;
   whatsappGroup?: { name: string; externalId: string } | null;
+  messageSendLogs?: Array<{ status: string; errorMessage?: string | null; attempts: number; createdAt: string }>;
   offer: {
     product: { title: string; imageUrl?: string | null };
     marketplace: { name: string };
@@ -75,8 +76,8 @@ export default function AgendadorPage() {
       />
       {message ? <p className="mb-4 rounded-md bg-leaf/10 px-3 py-2 text-sm text-leaf">{message}</p> : null}
       <div className="grid gap-3">
-        {posts.map((post) => (
-          <Panel key={post.id} className="p-3">
+          {posts.map((post) => (
+            <Panel key={post.id} className="p-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="flex min-w-0 flex-1 gap-3">
                 <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md bg-mist">
@@ -100,7 +101,15 @@ export default function AgendadorPage() {
                   {post.whatsappGroup ? (
                     <p className="text-xs text-[var(--muted)]">Grupo: {post.whatsappGroup.name}</p>
                   ) : null}
+                  {post.messageSendLogs?.[0] ? (
+                    <p className="text-xs text-[var(--muted)]">
+                      Ultimo envio: {post.messageSendLogs[0].status} - tentativa {post.messageSendLogs[0].attempts}
+                    </p>
+                  ) : null}
                   {post.errorMessage ? <p className="mt-1 text-sm text-coral">{post.errorMessage}</p> : null}
+                  {post.messageSendLogs?.[0]?.errorMessage ? (
+                    <p className="mt-1 text-sm text-coral">{post.messageSendLogs[0].errorMessage}</p>
+                  ) : null}
                 </div>
               </div>
               <div className="flex gap-2 lg:justify-end">

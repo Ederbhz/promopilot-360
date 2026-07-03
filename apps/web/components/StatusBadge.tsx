@@ -1,12 +1,22 @@
 const colors: Record<string, string> = {
   ACTIVE: "bg-leaf/10 text-leaf",
+  CONNECTED: "bg-leaf/10 text-leaf",
   VALID: "bg-leaf/10 text-leaf",
   PUBLISHED: "bg-leaf/10 text-leaf",
+  SENT: "bg-leaf/10 text-leaf",
   SCHEDULED: "bg-saffron/10 text-saffron",
   READY_TO_SEND: "bg-saffron/10 text-saffron",
+  WAITING_QR_CODE: "bg-saffron/10 text-saffron",
+  PROCESSING: "bg-saffron/10 text-saffron",
+  PENDING: "bg-saffron/10 text-saffron",
   PAUSED: "bg-gray-100 text-gray-700",
+  DISCONNECTED: "bg-gray-100 text-gray-700",
   CANCELED: "bg-gray-100 text-gray-700",
   FAILED: "bg-coral/10 text-coral",
+  ERROR: "bg-coral/10 text-coral",
+  AUTH_ERROR: "bg-coral/10 text-coral",
+  EXPIRED: "bg-coral/10 text-coral",
+  WARNING: "bg-coral/10 text-coral",
   INVALID: "bg-coral/10 text-coral",
   AFFILIATE_LINK_MISSING: "bg-coral/10 text-coral"
 };

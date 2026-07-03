@@ -61,6 +61,7 @@ enum ScheduledPostStatus {
 }
 
 enum WhatsAppProvider {
+  WPPCONNECT
   CLOUD_API
   WASSENGER
   WEBHOOK
@@ -70,6 +71,10 @@ enum WhatsAppProvider {
 enum WhatsAppConnectionStatus {
   CONNECTED
   DISCONNECTED
+  WAITING_QR_CODE
+  EXPIRED
+  AUTH_ERROR
+  ERROR
   WARNING
 }
 
@@ -199,6 +204,7 @@ model Campaign {
   updatedAt             DateTime       @updatedAt
   scheduledPosts        ScheduledPost[]
   whatsappGroups        CampaignWhatsAppGroup[]
+  messageSendLogs       MessageSendLog[]
 }
 
 model ScheduledPost {
@@ -219,6 +225,7 @@ model ScheduledPost {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   publishLogs   PublishLog[]
+  messageSendLogs MessageSendLog[]
 
   @@index([status, scheduledAt])
   @@index([whatsappGroupId])
@@ -227,16 +234,27 @@ model ScheduledPost {
 model WhatsAppConnection {
   id                   String                  @id @default(uuid())
   name                 String                  @db.VarChar(120)
+  sessionName          String?                 @unique @db.VarChar(120)
   phoneNumber          String?                 @db.VarChar(40)
-  provider             WhatsAppProvider        @default(CLOUD_API)
+  provider             WhatsAppProvider        @default(WPPCONNECT)
   status               WhatsAppConnectionStatus @default(DISCONNECTED)
   phoneNumberId        String?                 @db.VarChar(120)
+  qrCode               String?
+  lastConnectedAt      DateTime?
+  lastError            String?
+  consecutiveFailures  Int                     @default(0)
+  dailySentCount       Int                     @default(0)
+  dailyLimit           Int                     @default(100)
+  dailyWindowStartedAt DateTime?
+  minIntervalSeconds   Int                     @default(60)
+  lastSentAt           DateTime?
   encryptedCredentials Json?
   config               Json?
   isActive             Boolean                 @default(true)
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
   groups               WhatsAppGroup[]
+  messageSendLogs      MessageSendLog[]
 }
 
 model WhatsAppGroup {
@@ -245,12 +263,21 @@ model WhatsAppGroup {
   connection   WhatsAppConnection      @relation(fields: [connectionId], references: [id])
   name         String                  @db.VarChar(160)
   externalId   String                  @db.VarChar(220)
+  description  String?
+  category     String?                 @db.VarChar(120)
   type         String                  @default("GROUP") @db.VarChar(40)
   isActive     Boolean                 @default(true)
+  minIntervalSeconds Int               @default(60)
+  dailyLimit   Int                     @default(100)
+  dailySentCount Int                   @default(0)
+  dailyWindowStartedAt DateTime?
+  lastSentAt   DateTime?
+  notes        String?
   createdAt    DateTime                @default(now())
   updatedAt    DateTime                @updatedAt
   campaigns    CampaignWhatsAppGroup[]
   scheduledPosts ScheduledPost[]
+  messageSendLogs MessageSendLog[]
 
   @@index([connectionId])
   @@unique([connectionId, externalId])
@@ -278,6 +305,33 @@ model PublishLog {
   providerResponse Json?
   errorMessage    String?
   createdAt       DateTime       @default(now())
+}
+
+model MessageSendLog {
+  id                  String              @id @default(uuid())
+  scheduledPostId     String?
+  scheduledPost       ScheduledPost?      @relation(fields: [scheduledPostId], references: [id])
+  campaignId          String?
+  campaign            Campaign?           @relation(fields: [campaignId], references: [id])
+  whatsappGroupId     String?
+  whatsappGroup       WhatsAppGroup?      @relation(fields: [whatsappGroupId], references: [id])
+  whatsappConnectionId String?
+  whatsappConnection  WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id])
+  message             String
+  scheduledAt         DateTime?
+  sentAt              DateTime?
+  status              String              @db.VarChar(40)
+  errorMessage        String?
+  attempts            Int                 @default(0)
+  providerResponse    Json?
+  userResponsible     String?             @db.VarChar(180)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([campaignId])
+  @@index([whatsappGroupId])
+  @@index([whatsappConnectionId])
+  @@index([status, scheduledAt])
 }
 
 model ShortLink {

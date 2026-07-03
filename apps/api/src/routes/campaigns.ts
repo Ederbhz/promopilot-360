@@ -125,6 +125,63 @@ router.patch(
 );
 
 router.post(
+  "/:id/pause",
+  asyncHandler(async (req, res) => {
+    const campaign = await prisma.campaign.update({
+      where: { id: req.params.id },
+      data: { status: CampaignStatus.PAUSED }
+    });
+    res.json(campaign);
+  })
+);
+
+router.post(
+  "/:id/resume",
+  asyncHandler(async (req, res) => {
+    const campaign = await prisma.campaign.update({
+      where: { id: req.params.id },
+      data: { status: CampaignStatus.ACTIVE }
+    });
+    res.json(campaign);
+  })
+);
+
+router.post(
+  "/:id/cancel",
+  asyncHandler(async (req, res) => {
+    await prisma.scheduledPost.updateMany({
+      where: {
+        campaignId: req.params.id,
+        status: { in: [ScheduledPostStatus.SCHEDULED, ScheduledPostStatus.READY_TO_SEND] }
+      },
+      data: { status: ScheduledPostStatus.CANCELED }
+    });
+    const campaign = await prisma.campaign.update({
+      where: { id: req.params.id },
+      data: { status: CampaignStatus.ENDED }
+    });
+    res.json(campaign);
+  })
+);
+
+router.get(
+  "/:id/logs",
+  asyncHandler(async (req, res) => {
+    const logs = await prisma.messageSendLog.findMany({
+      where: { campaignId: req.params.id },
+      include: {
+        whatsappGroup: true,
+        whatsappConnection: true,
+        scheduledPost: { include: { offer: { include: { product: true } } } }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200
+    });
+    res.json(logs);
+  })
+);
+
+router.post(
   "/:id/preview-next-posts",
   asyncHandler(async (req, res) => {
     const campaign = await prisma.campaign.findUnique({
@@ -154,9 +211,16 @@ router.post(
       take: limit
     });
 
-    const schedule = buildSchedule(new Date(), campaign.intervalMinutes, offers.length, campaign.startTime, campaign.endTime);
     const groupIds = getCampaignWhatsAppGroupIds(campaign);
+    const schedule = buildSchedule(
+      new Date(),
+      campaign.intervalMinutes,
+      Math.max(offers.length * groupIds.length, 1),
+      campaign.startTime,
+      campaign.endTime
+    );
     const scheduled = [];
+    let scheduleIndex = 0;
     for (const [index, offer] of offers.entries()) {
       const rendered = await renderOfferMessage(offer.id, campaign.channel, campaign.templateId ?? undefined);
       for (const groupId of groupIds) {
@@ -168,7 +232,7 @@ router.post(
               whatsappGroupId: groupId,
               channel: campaign.channel,
               message: rendered.message,
-              scheduledAt: schedule[index]!,
+              scheduledAt: schedule[scheduleIndex++]!,
               status: shouldHoldForApproval(campaign, groupId)
                 ? ScheduledPostStatus.READY_TO_SEND
                 : ScheduledPostStatus.SCHEDULED
@@ -211,7 +275,12 @@ router.post(
     const rendered = await renderOfferMessage(offer.id, campaign.channel, campaign.templateId ?? undefined);
     const scheduledAt = await nextCampaignSlot(campaign.id, campaign.intervalMinutes, campaign.startTime, campaign.endTime);
     const scheduled = [];
-    for (const groupId of getCampaignWhatsAppGroupIds(campaign)) {
+    const groupIds = getCampaignWhatsAppGroupIds(campaign);
+    for (const [groupIndex, groupId] of groupIds.entries()) {
+      const targetScheduledAt: Date =
+        groupIndex === 0
+          ? scheduledAt
+          : await nextCampaignSlot(campaign.id, campaign.intervalMinutes, campaign.startTime, campaign.endTime);
       scheduled.push(
         await prisma.scheduledPost.create({
           data: {
@@ -220,7 +289,7 @@ router.post(
             whatsappGroupId: groupId,
             channel: campaign.channel,
             message: rendered.message,
-            scheduledAt,
+            scheduledAt: targetScheduledAt,
             status: shouldHoldForApproval(campaign, groupId)
               ? ScheduledPostStatus.READY_TO_SEND
               : ScheduledPostStatus.SCHEDULED

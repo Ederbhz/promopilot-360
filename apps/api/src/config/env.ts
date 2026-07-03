@@ -35,6 +35,12 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_DEFAULT_CHAT_ID: z.string().optional(),
   WHATSAPP_GRAPH_VERSION: z.string().default("v23.0"),
+  WPP_SERVER_URL: z.string().url().default("http://localhost:21465"),
+  WPP_SESSION_NAME: z.string().default("promopilot360"),
+  WPP_SECRET_KEY: z.string().optional(),
+  WHATSAPP_DEFAULT_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
+  WHATSAPP_DAILY_LIMIT: z.coerce.number().int().min(1).default(100),
+  WHATSAPP_MAX_CONSECUTIVE_FAILURES: z.coerce.number().int().min(1).default(5),
   SHORT_LINK_DOMAIN: z.string().default("http://localhost:4000/r"),
   DISABLE_WORKERS: z.string().optional()
 });

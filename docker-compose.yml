@@ -19,5 +19,15 @@ services:
     ports:
       - "6379:6379"
 
+  wppconnect:
+    image: wppconnect/server-cli:latest
+    container_name: promopilot_wppconnect
+    restart: unless-stopped
+    ports:
+      - "21465:21465"
+    volumes:
+      - wppconnect_tokens:/usr/src/wpp-server/tokens
+
 volumes:
   postgres_data:
+  wppconnect_tokens:

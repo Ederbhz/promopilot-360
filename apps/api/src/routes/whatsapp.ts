@@ -5,16 +5,27 @@ import { encryptJson } from "../lib/crypto.js";
 import { asyncHandler, HttpError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { jsonInput } from "../lib/sanitize.js";
-import { testWhatsAppConnection } from "../services/whatsapp.js";
+import {
+  closeWhatsAppSession,
+  getWhatsAppSessionStatus,
+  listAvailableWhatsAppGroups,
+  logoutWhatsAppSession,
+  restartWhatsAppSession,
+  startWhatsAppSession,
+  testWhatsAppConnection
+} from "../services/whatsapp.js";
 
 const router = Router();
 
 const connectionSchema = z.object({
   name: z.string().min(2),
+  sessionName: z.string().min(2).optional().nullable(),
   phoneNumber: z.string().optional().nullable(),
-  provider: z.nativeEnum(WhatsAppProvider).default(WhatsAppProvider.CLOUD_API),
+  provider: z.nativeEnum(WhatsAppProvider).default(WhatsAppProvider.WPPCONNECT),
   status: z.nativeEnum(WhatsAppConnectionStatus).optional(),
   phoneNumberId: z.string().optional().nullable(),
+  dailyLimit: z.coerce.number().int().min(1).max(500).default(100),
+  minIntervalSeconds: z.coerce.number().int().min(10).max(86400).default(60),
   credentials: z.record(z.unknown()).optional(),
   config: z.record(z.unknown()).optional(),
   isActive: z.boolean().default(true)
@@ -24,7 +35,12 @@ const groupSchema = z.object({
   connectionId: z.string().uuid(),
   name: z.string().min(2),
   externalId: z.string().min(2),
+  description: z.string().optional().nullable(),
+  category: z.string().optional().nullable(),
   type: z.string().default("GROUP"),
+  minIntervalSeconds: z.coerce.number().int().min(10).max(86400).default(60),
+  dailyLimit: z.coerce.number().int().min(1).max(500).default(100),
+  notes: z.string().optional().nullable(),
   isActive: z.boolean().default(true)
 });
 
@@ -43,15 +59,19 @@ router.post(
   "/connections",
   asyncHandler(async (req, res) => {
     const data = connectionSchema.parse(req.body);
+    const sessionName = normalizeSessionName(data.sessionName ?? data.name);
     const connection = await prisma.whatsAppConnection.create({
       data: {
         name: data.name,
+        sessionName,
         phoneNumber: data.phoneNumber,
         provider: data.provider,
         status: data.status ?? inferStatus(data.provider, data.credentials, data.config),
         phoneNumberId: data.phoneNumberId,
+        dailyLimit: data.dailyLimit,
+        minIntervalSeconds: data.minIntervalSeconds,
         encryptedCredentials: data.credentials ? jsonInput(encryptJson(data.credentials)) : undefined,
-        config: jsonInput(data.config),
+        config: jsonInput({ ...data.config, sessionName }),
         isActive: data.isActive
       },
       include: { _count: { select: { groups: true } } }
@@ -66,10 +86,17 @@ router.put(
     const data = connectionSchema.partial().parse(req.body);
     const existing = await prisma.whatsAppConnection.findUnique({ where: { id: req.params.id } });
     if (!existing) throw new HttpError(404, "Conexao WhatsApp nao encontrada.");
+    const sessionName =
+      data.sessionName === null ? null : data.sessionName ? normalizeSessionName(data.sessionName) : undefined;
+    const config =
+      data.config === undefined
+        ? undefined
+        : jsonInput({ ...data.config, ...(sessionName ? { sessionName } : {}) });
     const connection = await prisma.whatsAppConnection.update({
       where: { id: req.params.id },
       data: {
         name: data.name,
+        sessionName,
         phoneNumber: data.phoneNumber,
         provider: data.provider,
         status:
@@ -78,8 +105,10 @@ router.put(
             ? inferStatus(data.provider ?? existing.provider, data.credentials, data.config)
             : undefined),
         phoneNumberId: data.phoneNumberId,
+        dailyLimit: data.dailyLimit,
+        minIntervalSeconds: data.minIntervalSeconds,
         encryptedCredentials: data.credentials ? jsonInput(encryptJson(data.credentials)) : undefined,
-        config: data.config === undefined ? undefined : jsonInput(data.config),
+        config,
         isActive: data.isActive
       },
       include: { _count: { select: { groups: true } } }
@@ -95,9 +124,88 @@ router.post(
     const result = await testWhatsAppConnection(connectionId);
     await prisma.whatsAppConnection.update({
       where: { id: connectionId },
-      data: { status: result.ok ? WhatsAppConnectionStatus.CONNECTED : WhatsAppConnectionStatus.WARNING }
+      data: { status: result.ok ? WhatsAppConnectionStatus.CONNECTED : normalizeReturnedStatus(result.status) }
     });
     res.json(result);
+  })
+);
+
+router.post(
+  "/connections/:id/start",
+  asyncHandler(async (req, res) => {
+    const connection = await startWhatsAppSession(req.params.id!);
+    res.json(sanitizeConnection(connection));
+  })
+);
+
+router.get(
+  "/connections/:id/session/status",
+  asyncHandler(async (req, res) => {
+    const connection = await getWhatsAppSessionStatus(req.params.id!);
+    res.json(sanitizeConnection(connection));
+  })
+);
+
+router.post(
+  "/connections/:id/logout",
+  asyncHandler(async (req, res) => {
+    const result = await logoutWhatsAppSession(req.params.id!);
+    res.json({ ...result, connection: sanitizeConnection(result.connection) });
+  })
+);
+
+router.post(
+  "/connections/:id/close",
+  asyncHandler(async (req, res) => {
+    const result = await closeWhatsAppSession(req.params.id!);
+    res.json({ ...result, connection: sanitizeConnection(result.connection) });
+  })
+);
+
+router.post(
+  "/connections/:id/restart",
+  asyncHandler(async (req, res) => {
+    const connection = await restartWhatsAppSession(req.params.id!);
+    res.json(sanitizeConnection(connection));
+  })
+);
+
+router.get(
+  "/connections/:id/available-groups",
+  asyncHandler(async (req, res) => {
+    res.json(await listAvailableWhatsAppGroups(req.params.id!));
+  })
+);
+
+router.post(
+  "/session/start",
+  asyncHandler(async (req, res) => {
+    const connection = await startWhatsAppSession(await resolveWppConnectionId(req));
+    res.json(sanitizeConnection(connection));
+  })
+);
+
+router.get(
+  "/session/status",
+  asyncHandler(async (req, res) => {
+    const connection = await getWhatsAppSessionStatus(await resolveWppConnectionId(req));
+    res.json(sanitizeConnection(connection));
+  })
+);
+
+router.post(
+  "/session/logout",
+  asyncHandler(async (req, res) => {
+    const result = await logoutWhatsAppSession(await resolveWppConnectionId(req));
+    res.json({ ...result, connection: sanitizeConnection(result.connection) });
+  })
+);
+
+router.post(
+  "/session/restart",
+  asyncHandler(async (req, res) => {
+    const connection = await restartWhatsAppSession(await resolveWppConnectionId(req));
+    res.json(sanitizeConnection(connection));
   })
 );
 
@@ -140,12 +248,27 @@ router.put(
 router.delete(
   "/groups/:id",
   asyncHandler(async (req, res) => {
-    await prisma.whatsAppGroup.delete({ where: { id: req.params.id } });
+    await prisma.whatsAppGroup.update({
+      where: { id: req.params.id },
+      data: { isActive: false }
+    });
     res.status(204).end();
   })
 );
 
 export default router;
+
+async function resolveWppConnectionId(req: { body?: unknown; query?: Record<string, unknown> }) {
+  const body = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+  const provided = stringValue(body.connectionId) ?? stringValue(req.query?.connectionId);
+  if (provided) return provided;
+  const connection = await prisma.whatsAppConnection.findFirst({
+    where: { provider: WhatsAppProvider.WPPCONNECT, isActive: true },
+    orderBy: { createdAt: "desc" }
+  });
+  if (!connection) throw new HttpError(404, "Cadastre uma conexao WPPConnect primeiro.");
+  return connection.id;
+}
 
 function inferStatus(
   provider: WhatsAppProvider,
@@ -153,6 +276,7 @@ function inferStatus(
   config?: Record<string, unknown>
 ) {
   if (provider === WhatsAppProvider.ASSISTED) return WhatsAppConnectionStatus.WARNING;
+  if (provider === WhatsAppProvider.WPPCONNECT) return WhatsAppConnectionStatus.DISCONNECTED;
   const hasCredentials = Boolean(
     stringValue(credentials?.accessToken) ||
       stringValue(credentials?.apiToken) ||
@@ -167,6 +291,18 @@ function sanitizeConnection<T extends { encryptedCredentials?: unknown }>(connec
     ...connection,
     encryptedCredentials: connection.encryptedCredentials ? { encrypted: true } : null
   };
+}
+
+function normalizeSessionName(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120) || "promopilot360";
+}
+
+function normalizeReturnedStatus(value: unknown) {
+  const status = stringValue(value);
+  if (status && Object.values(WhatsAppConnectionStatus).includes(status as WhatsAppConnectionStatus)) {
+    return status as WhatsAppConnectionStatus;
+  }
+  return WhatsAppConnectionStatus.WARNING;
 }
 
 function stringValue(value: unknown) {

@@ -25,7 +25,8 @@ router.get(
       include: {
         campaign: true,
         whatsappGroup: true,
-        offer: { include: { product: true, marketplace: true } }
+        offer: { include: { product: true, marketplace: true } },
+        messageSendLogs: { orderBy: { createdAt: "desc" }, take: 3 }
       },
       orderBy: { scheduledAt: "asc" },
       take: 200
@@ -52,7 +53,8 @@ router.get(
         campaign: true,
         whatsappGroup: true,
         offer: { include: { product: true, marketplace: true } },
-        publishLogs: { orderBy: { createdAt: "desc" } }
+        publishLogs: { orderBy: { createdAt: "desc" } },
+        messageSendLogs: { orderBy: { createdAt: "desc" } }
       }
     });
     if (!post) throw new HttpError(404, "Publicacao nao encontrada.");
