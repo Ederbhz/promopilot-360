@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { LockKeyhole, LogIn, Mail, Sparkles } from "lucide-react";
+import { LockKeyhole, LogIn, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { postJson, setToken } from "@/lib/api";
+import { assetPath } from "@/lib/assets";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,15 +30,15 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center px-4">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-md border border-[var(--border)] bg-white p-5 shadow-soft">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-md bg-leaf text-white">
-            <Sparkles size={22} aria-hidden />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-ink">PromoPilot 360</h1>
-            <p className="text-sm text-[var(--muted)]">Acesso administrativo</p>
-          </div>
+      <form onSubmit={submit} className="w-full max-w-md rounded-md border border-[var(--border)] bg-white p-6 shadow-soft">
+        <div className="mb-6">
+          <h1 className="sr-only">PromoPilot 360</h1>
+          <img
+            alt="PromoPilot 360"
+            className="h-auto w-72 max-w-full"
+            src={assetPath("/brand/promopilot-360-logo.png")}
+          />
+          <p className="mt-2 text-sm text-[var(--muted)]">Acesso administrativo</p>
         </div>
 
         <label className="mb-3 block">
