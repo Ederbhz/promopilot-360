@@ -1,5 +1,23 @@
 services:
   - type: web
+    name: promopilot360-wppconnect
+    runtime: docker
+    plan: starter
+    region: oregon
+    rootDir: apps/wppconnect
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: WPP_LOG_LEVEL
+        value: info
+    disk:
+      name: wppconnect-data
+      mountPath: /usr/src/wpp-server/tokens
+      sizeGB: 1
+
+  - type: web
     name: promopilot360-api
     runtime: node
     plan: free
@@ -40,12 +58,18 @@ services:
         sync: false
       - key: TELEGRAM_DEFAULT_CHAT_ID
         sync: false
-      - key: WPP_SERVER_URL
-        sync: false
+      - key: WPP_SERVER_HOSTNAME
+        fromService:
+          name: promopilot360-wppconnect
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: WPP_SESSION_NAME
         value: promopilot360
       - key: WPP_SECRET_KEY
-        sync: false
+        fromService:
+          name: promopilot360-wppconnect
+          type: web
+          envVarKey: SECRET_KEY
       - key: WHATSAPP_DEFAULT_INTERVAL_SECONDS
         value: 60
       - key: WHATSAPP_DAILY_LIMIT

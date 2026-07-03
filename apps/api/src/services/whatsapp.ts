@@ -284,29 +284,32 @@ async function waitForWppQrCode(connection: WhatsAppConnection) {
 }
 
 async function ensureWppToken(connection: WhatsAppConnection) {
-  const cacheKey = `${connection.id}:${connection.updatedAt.getTime()}`;
+  const baseUrl = resolveWppBaseUrl(connection);
+  const cacheKey = `${connection.id}:${connection.updatedAt.getTime()}:${baseUrl}`;
   const cached = wppTokenCache.get(cacheKey);
   if (cached) return cached;
   const credentials = safeDecrypt(connection.encryptedCredentials);
   const config = toRecord(connection.config);
-  const existing =
-    stringValue(credentials.token) ??
-    stringValue(credentials.apiToken) ??
-    stringValue(config.token) ??
-    stringValue(config.apiToken);
+  const managedSecret = env.WPP_SECRET_KEY;
+  const existing = managedSecret
+    ? undefined
+    : stringValue(credentials.token) ??
+      stringValue(credentials.apiToken) ??
+      stringValue(config.token) ??
+      stringValue(config.apiToken);
   if (existing) {
     wppTokenCache.set(cacheKey, existing);
     return existing;
   }
 
-  const secretKey = stringValue(credentials.secretKey) ?? stringValue(config.secretKey) ?? env.WPP_SECRET_KEY;
+  const secretKey = managedSecret ?? stringValue(credentials.secretKey) ?? stringValue(config.secretKey);
   if (!secretKey) {
-    throw new Error("Informe WPP_SECRET_KEY ou a chave secreta da conexao WPPConnect.");
+    throw new Error("Configure WPP_SECRET_KEY no Render ou informe a chave secreta da conexao WPPConnect.");
   }
 
   const session = resolveSessionName(connection);
   const response = await fetch(
-    `${resolveWppBaseUrl(connection)}/api/${encodeURIComponent(session)}/${encodeURIComponent(secretKey)}/generate-token`,
+    `${baseUrl}/api/${encodeURIComponent(session)}/${encodeURIComponent(secretKey)}/generate-token`,
     { method: "POST" }
   );
   const payload = await readProviderResponse(response, "WPPConnect Server");
@@ -507,7 +510,18 @@ async function readProviderResponse(response: Response, provider: string) {
 
 function resolveWppBaseUrl(connection: WhatsAppConnection) {
   const config = toRecord(connection.config);
-  return (stringValue(config.apiBaseUrl) ?? env.WPP_SERVER_URL).replace(/\/+$/, "");
+  return (
+    resolveWppHostnameUrl(env.WPP_SERVER_HOSTNAME) ??
+    env.WPP_SERVER_URL ??
+    stringValue(config.apiBaseUrl) ??
+    "http://localhost:21465"
+  ).replace(/\/+$/, "");
+}
+
+function resolveWppHostnameUrl(hostname?: string) {
+  const value = stringValue(hostname);
+  if (!value) return undefined;
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
 }
 
 function resolveSessionName(connection: WhatsAppConnection) {

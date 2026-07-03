@@ -50,8 +50,6 @@ const emptyConnectionForm = {
   name: "",
   sessionName: "promopilot360",
   phoneNumber: "",
-  secretKey: "",
-  apiBaseUrl: "",
   dailyLimit: 100,
   minIntervalSeconds: 60,
   messageType: "TEXT_IMAGE",
@@ -286,8 +284,6 @@ export default function WhatsAppPage() {
       name: connection.name,
       sessionName: connection.sessionName ?? (stringValue(config.sessionName) || "promopilot360"),
       phoneNumber: connection.phoneNumber ?? "",
-      secretKey: "",
-      apiBaseUrl: stringValue(config.apiBaseUrl),
       dailyLimit: connection.dailyLimit ?? 100,
       minIntervalSeconds: connection.minIntervalSeconds ?? 60,
       messageType: stringValue(config.messageType) || "TEXT_IMAGE",
@@ -355,26 +351,6 @@ export default function WhatsAppPage() {
                     value={connectionForm.phoneNumber}
                     onChange={(event) => setConnectionForm({ ...connectionForm, phoneNumber: event.target.value })}
                     placeholder="5531999999999"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium">URL da API</span>
-                  <input
-                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                    value={connectionForm.apiBaseUrl}
-                    onChange={(event) => setConnectionForm({ ...connectionForm, apiBaseUrl: event.target.value })}
-                    placeholder="https://seu-wppconnect.onrender.com"
-                  />
-                </label>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium">Secret key</span>
-                  <input
-                    className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                    type="password"
-                    value={connectionForm.secretKey}
-                    onChange={(event) => setConnectionForm({ ...connectionForm, secretKey: event.target.value })}
                   />
                 </label>
                 <label className="block">
@@ -735,17 +711,14 @@ function IconButton({
 }
 
 function buildConnectionPayload(form: typeof emptyConnectionForm) {
-  const credentials = form.secretKey.trim() ? { secretKey: form.secretKey.trim() } : undefined;
   return {
     name: form.name,
     sessionName: form.sessionName || undefined,
     phoneNumber: form.phoneNumber || undefined,
     dailyLimit: Number(form.dailyLimit),
     minIntervalSeconds: Number(form.minIntervalSeconds),
-    credentials,
     config: {
       sessionName: form.sessionName || undefined,
-      apiBaseUrl: form.apiBaseUrl || undefined,
       messageType: form.messageType,
       optimizeImage: form.optimizeImage,
       resizeImage: form.resizeImage
