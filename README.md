@@ -8,6 +8,7 @@ Garimpo inteligente de ofertas no piloto automatico.
 - Backend: Express, TypeScript, Prisma, PostgreSQL.
 - Filas: Redis com BullMQ para publicacoes agendadas.
 - Integracoes: conectores Awin/Natura, Shopee, Mercado Livre, Magalu e Manual.
+- WhatsApp: WPPConnect Server com QR Code para grupos. Veja `docs/whatsapp-wppconnect.md`.
 
 ## Requisitos
 
