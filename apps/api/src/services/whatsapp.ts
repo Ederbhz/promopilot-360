@@ -96,11 +96,15 @@ export async function startWhatsAppSession(connectionId: string) {
     const qrPayload = await waitForWppQrCode(connection);
     const qrCode = extractQrCode(qrPayload) ?? extractQrCode(payload);
     const status = normalizeWppStatus(qrPayload ?? payload, qrCode);
+    const lastError =
+      !qrCode && status !== WhatsAppConnectionStatus.CONNECTED
+        ? "WPPConnect iniciou, mas nao retornou QRCode. Verifique se o servico no Render esta usando o Dockerfile do repositorio e nao a imagem padrao."
+        : null;
     return updateConnectionSession(connection.id, {
       status,
       qrCode,
       lastConnectedAt: status === WhatsAppConnectionStatus.CONNECTED ? new Date() : undefined,
-      lastError: null,
+      lastError,
       sessionName: session,
       isActive: true
     });

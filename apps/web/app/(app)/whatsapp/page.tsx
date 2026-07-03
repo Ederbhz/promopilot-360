@@ -172,7 +172,7 @@ export default function WhatsAppPage() {
       const connection = await postJson<WhatsAppConnection>(`/whatsapp/connections/${id}/start`, {});
       await load();
       setSelectedConnectionId(connection.id);
-      setMessage(connection.status === "CONNECTED" ? "Sessao conectada." : "QRCode atualizado.");
+      setMessage(readConnectionStartMessage(connection));
     } catch (err) {
       await load().catch(() => undefined);
       setError(err instanceof Error ? err.message : "Falha ao conectar sessao.");
@@ -725,6 +725,13 @@ function buildConnectionPayload(form: typeof emptyConnectionForm) {
     },
     isActive: true
   };
+}
+
+function readConnectionStartMessage(connection: WhatsAppConnection) {
+  if (connection.status === "CONNECTED") return "Sessao conectada.";
+  if (connection.qrCode) return "QRCode atualizado.";
+  if (connection.status === "WAITING_QR_CODE") return "Sessao iniciada. Aguardando QRCode do WPPConnect.";
+  return "WPPConnect iniciou, mas ainda nao retornou QRCode.";
 }
 
 function stringValue(value: unknown) {
