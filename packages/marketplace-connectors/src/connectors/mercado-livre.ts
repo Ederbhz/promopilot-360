@@ -68,9 +68,8 @@ export class MercadoLivreConnector implements MarketplaceConnector {
 
     const payload = (await response.json()) as MercadoLivreSearchResponse;
     const candidates = applyOfferFilters(
-      payload.results.map((item) => this.toOfferCandidate(item)),
-      params,
-      keyword
+      payload.results.map((item) => this.toOfferCandidate(item, params.category)),
+      params
     );
 
     return sortCandidates(candidates, params.sortBy).slice(0, limit);
@@ -136,7 +135,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
         rating,
         reviewCount,
         brand: seller || undefined,
-        category: params.category,
+        category: inferCategoryFromText([title, seller].filter(Boolean).join(" "), params.category),
         metadata: {
           source: "mercado-livre-public-offers",
           sourceUrl: offersUrl.toString(),
@@ -146,7 +145,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
       candidates.push({ ...candidate, score: calculateOfferScore(candidate) });
     });
 
-    return sortCandidates(applyOfferFilters(candidates, params, keyword), params.sortBy).slice(0, limit);
+    return sortCandidates(applyOfferFilters(candidates, params), params.sortBy).slice(0, limit);
   }
 
   async extractFromUrl(url: string): Promise<ProductExtractionResult> {
@@ -204,7 +203,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
     };
   }
 
-  private toOfferCandidate(item: MercadoLivreSearchItem): OfferCandidate {
+  private toOfferCandidate(item: MercadoLivreSearchItem, preferredCategory?: string): OfferCandidate {
     const currentPrice = toNumber(item.price);
     const oldPrice = toNumber(item.original_price);
     const discountPercent =
@@ -223,7 +222,12 @@ export class MercadoLivreConnector implements MarketplaceConnector {
       imageUrl: normalizeImageUrl(item.thumbnail),
       freeShipping: item.shipping?.free_shipping,
       reviewCount: item.sold_quantity,
-      category: item.domain_id,
+      category: inferCategoryFromText(
+        [item.title, item.domain_id, item.attributes?.find((attribute) => attribute.id === "BRAND")?.value_name]
+          .filter(Boolean)
+          .join(" "),
+        preferredCategory
+      ) ?? item.domain_id,
       brand: item.attributes?.find((attribute) => attribute.id === "BRAND")?.value_name,
       metadata: {
         source: "mercado-livre-public-search",
@@ -462,17 +466,76 @@ function normalizeSearchText(value: string) {
     .toLowerCase();
 }
 
-function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersParams, keyword: string) {
-  const keywordWords = normalizeSearchText(keyword)
+const categoryTerms: Record<string, string[]> = {
+  fitness: [
+    "academia",
+    "atividade fisica",
+    "bike",
+    "bicicleta",
+    "colchonete",
+    "corrida",
+    "creatina",
+    "elastico",
+    "esteira",
+    "exercicio",
+    "halter",
+    "musculacao",
+    "pre treino",
+    "protein",
+    "proteina",
+    "shaker",
+    "suplemento",
+    "treino",
+    "whey",
+    "yoga"
+  ],
+  alimentos: [
+    "acucar",
+    "alimento",
+    "arroz",
+    "azeite",
+    "biscoito",
+    "cafe",
+    "cha",
+    "feijao",
+    "leite",
+    "macarrao",
+    "molho",
+    "tempero"
+  ],
+  suplementos: [
+    "bcaa",
+    "colageno",
+    "creatina",
+    "glutamina",
+    "hipercalorico",
+    "multivitaminico",
+    "omega",
+    "pre treino",
+    "protein",
+    "proteina",
+    "suplemento",
+    "vitamina",
+    "whey"
+  ],
+  beleza: ["beleza", "cabelo", "creme", "maquiagem", "pele", "perfume", "sabonete", "shampoo"],
+  moda: ["bermuda", "bolsa", "camisa", "camiseta", "calca", "moda", "sapato", "tenis", "vestido"],
+  "casa e jardim": ["casa", "cozinha", "decoracao", "ferramenta", "jardim", "limpeza", "lustre", "mesa", "panela"],
+  eletronicos: ["camera", "carregador", "celular", "fone", "monitor", "notebook", "smartphone", "tablet", "tv"],
+  infantil: ["bebe", "brinquedo", "crianca", "fralda", "infantil", "mamadeira"],
+  pets: ["cao", "cachorro", "gato", "pet", "racao", "tapete higienico"]
+};
+
+function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersParams) {
+  const keywordWords = normalizeSearchText(params.keyword ?? "")
     .split(/\s+/)
     .map((word) => word.trim())
     .filter((word) => word.length > 2 && !["oferta", "ofertas", "promocao", "promocoes"].includes(word));
 
   return candidates.filter((candidate) => {
+    const haystack = getCandidateSearchText(candidate);
+    if (params.category && !matchesCategory(haystack, params.category)) return false;
     if (keywordWords.length) {
-      const haystack = normalizeSearchText(
-        [candidate.title, candidate.brand, candidate.category].filter(Boolean).join(" ")
-      );
       if (!keywordWords.every((word) => haystack.includes(word))) return false;
     }
     if (params.minPrice !== undefined && (candidate.currentPrice ?? 0) < params.minPrice) return false;
@@ -484,6 +547,39 @@ function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersPar
     if (params.minCommission !== undefined && (candidate.commissionPercent ?? 0) < params.minCommission) return false;
     return true;
   });
+}
+
+function getCandidateSearchText(candidate: OfferCandidate) {
+  return normalizeSearchText(
+    [candidate.title, candidate.description, candidate.brand, candidate.category].filter(Boolean).join(" ")
+  );
+}
+
+function matchesCategory(normalizedHaystack: string, category: string) {
+  const normalizedCategory = normalizeSearchText(category);
+  const terms = [
+    ...normalizedCategory.split(/\s+/).filter((word) => word.length > 2),
+    ...(categoryTerms[normalizedCategory] ?? [])
+  ].map(normalizeSearchText);
+  return [...new Set(terms)].some((term) => normalizedHaystack.includes(term));
+}
+
+function inferCategoryFromText(text: string, preferredCategory?: string) {
+  const normalizedText = normalizeSearchText(text);
+  if (preferredCategory && matchesCategory(normalizedText, preferredCategory)) return preferredCategory;
+
+  for (const category of Object.keys(categoryTerms)) {
+    if (matchesCategory(normalizedText, category)) return toDisplayCategory(category);
+  }
+
+  return undefined;
+}
+
+function toDisplayCategory(category: string) {
+  return category
+    .split(" ")
+    .map((word) => (word.length <= 1 ? word : `${word[0]?.toUpperCase()}${word.slice(1)}`))
+    .join(" ");
 }
 
 function sortCandidates(candidates: OfferCandidate[], sortBy: SearchOffersParams["sortBy"]) {
