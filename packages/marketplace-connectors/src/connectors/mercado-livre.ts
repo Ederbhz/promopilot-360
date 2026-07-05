@@ -18,7 +18,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
   constructor(private readonly env: ConnectorEnv) {}
 
   async searchOffers(params: SearchOffersParams): Promise<OfferCandidate[]> {
-    const keyword = params.keyword || params.category || "ofertas";
+    const keyword = [params.category, params.keyword].filter(Boolean).join(" ") || "ofertas";
     const limit = Math.min(params.limit ?? 20, 50);
 
     let apiError: Error | undefined;

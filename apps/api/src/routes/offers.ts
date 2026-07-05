@@ -1,4 +1,4 @@
-import { IntegrationType, MarketplaceKey, OfferStatus } from "@prisma/client";
+import { IntegrationType, MarketplaceKey, OfferStatus, Prisma } from "@prisma/client";
 import { Router } from "express";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -33,15 +33,31 @@ const defaultMarketplaceNames: Record<MarketplaceKey, { name: string; integratio
 };
 
 const offerCardInclude = { product: true, marketplace: true } as const;
+const unavailableForGarimpoStatuses: OfferStatus[] = [OfferStatus.VALID, OfferStatus.SCHEDULED, OfferStatus.PUBLISHED];
+const generatedOfferWhere: Prisma.OfferWhereInput = {
+  affiliateUrl: { not: null }
+};
+const garimpoOfferWhere: Prisma.OfferWhereInput = {
+  affiliateUrl: null,
+  status: { notIn: unavailableForGarimpoStatuses }
+};
 
 router.get(
   "/",
   asyncHandler(async (req, res) => {
     const status = typeof req.query.status === "string" ? (req.query.status as OfferStatus) : undefined;
+    const scope = typeof req.query.scope === "string" ? req.query.scope : undefined;
     const marketplaceId = typeof req.query.marketplaceId === "string" ? req.query.marketplaceId : undefined;
+    const scopedWhere =
+      scope === "garimpo"
+        ? garimpoOfferWhere
+        : scope === "generated"
+        ? generatedOfferWhere
+        : {};
     const offers = await prisma.offer.findMany({
       where: {
-        status,
+        ...scopedWhere,
+        ...(status ? { status } : {}),
         marketplaceId
       },
       include: {
@@ -52,7 +68,13 @@ router.get(
       orderBy: { createdAt: "desc" },
       take: 100
     });
-    res.json(offers);
+    if (scope !== "garimpo") {
+      res.json(offers);
+      return;
+    }
+
+    const hiddenKeys = await getGeneratedOfferKeys();
+    res.json(offers.filter((offer) => !hasGeneratedIdentity(hiddenKeys, offer)));
   })
 );
 
@@ -132,11 +154,16 @@ router.post(
     }
 
     const saved = [];
+    let skippedGenerated = 0;
     for (const candidate of candidates) {
+      if (await hasGeneratedOfferForCandidate(candidate)) {
+        skippedGenerated += 1;
+        continue;
+      }
       saved.push(await persistCandidate({ ...candidate, score: candidate.score ?? calculateOfferScore(candidate) }));
     }
 
-    res.json({ count: saved.length, offers: saved, warnings });
+    res.json({ count: saved.length, offers: saved, warnings, skippedGenerated });
   })
 );
 
@@ -352,26 +379,97 @@ async function persistCandidate(candidate: OfferCandidate) {
         }
       });
 
+  const offerData = {
+    originalUrl: candidate.productUrl,
+    affiliateUrl: candidate.affiliateUrl,
+    currentPrice,
+    oldPrice,
+    discountPercent,
+    couponCode: candidate.couponCode,
+    couponDescription: candidate.couponDescription,
+    freeShipping: candidate.freeShipping,
+    estimatedCommission,
+    commissionPercent,
+    score,
+    status: candidate.affiliateUrl ? OfferStatus.VALID : OfferStatus.AFFILIATE_LINK_MISSING,
+    metadata: jsonInput(candidate.metadata)
+  };
+
+  const existingPendingOffer = !candidate.affiliateUrl
+    ? await prisma.offer.findFirst({
+        where: {
+          productId: product.id,
+          ...garimpoOfferWhere
+        },
+        orderBy: { createdAt: "desc" }
+      })
+    : null;
+
+  if (existingPendingOffer) {
+    return prisma.offer.update({
+      where: { id: existingPendingOffer.id },
+      data: offerData,
+      include: { product: true, marketplace: true }
+    });
+  }
+
   return prisma.offer.create({
     data: {
       productId: product.id,
       marketplaceId: marketplace.id,
-      originalUrl: candidate.productUrl,
-      affiliateUrl: candidate.affiliateUrl,
-      currentPrice,
-      oldPrice,
-      discountPercent,
-      couponCode: candidate.couponCode,
-      couponDescription: candidate.couponDescription,
-      freeShipping: candidate.freeShipping,
-      estimatedCommission,
-      commissionPercent,
-      score,
-      status: candidate.affiliateUrl ? OfferStatus.VALID : OfferStatus.AFFILIATE_LINK_MISSING,
-      metadata: jsonInput(candidate.metadata)
+      ...offerData
     },
     include: { product: true, marketplace: true }
   });
+}
+
+async function hasGeneratedOfferForCandidate(candidate: OfferCandidate) {
+  const key = (candidate.marketplaceKey || "MANUAL") as MarketplaceKey;
+  const marketplace = await ensureMarketplace(key);
+  return Boolean(
+    await prisma.offer.findFirst({
+      where: {
+        marketplaceId: marketplace.id,
+        AND: [
+          generatedOfferWhere,
+          {
+            OR: [
+              { originalUrl: candidate.productUrl },
+              { product: { productUrl: candidate.productUrl } },
+              ...(candidate.externalId ? [{ product: { externalId: candidate.externalId } }] : [])
+            ]
+          }
+        ]
+      },
+      select: { id: true }
+    })
+  );
+}
+
+async function getGeneratedOfferKeys() {
+  const generatedOffers = await prisma.offer.findMany({
+    where: generatedOfferWhere,
+    include: { product: true }
+  });
+  const urls = new Set<string>();
+  const externalIds = new Set<string>();
+  for (const offer of generatedOffers) {
+    urls.add(offer.originalUrl);
+    urls.add(offer.product.productUrl);
+    if (offer.product.externalId) externalIds.add(offer.product.externalId);
+  }
+  return { urls, externalIds };
+}
+
+function hasGeneratedIdentity(
+  keys: { urls: Set<string>; externalIds: Set<string> },
+  offer: { originalUrl: string; product: { productUrl: string; externalId?: string | null } }
+) {
+  return (
+    keys.urls.has(offer.originalUrl) ||
+    keys.urls.has(offer.product.productUrl) ||
+    Boolean(offer.product.externalId && keys.externalIds.has(offer.product.externalId))
+  );
 }
 
 function normalizeNumber(value: unknown, min: number, max: number) {
