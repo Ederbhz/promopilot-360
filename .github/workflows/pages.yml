@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
+  id-token: write
 
 concurrency:
   group: pages
@@ -17,6 +18,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,44 +47,11 @@ jobs:
           pnpm --filter @promopilot/web build
           touch apps/web/out/.nojekyll
 
-      - name: Publish gh-pages branch
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          cd apps/web/out
-          git init
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Deploy frontend ${GITHUB_SHA}"
-          git branch -M gh-pages
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin gh-pages
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/out
 
-      - name: Configure Pages source
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          payload='{"source":{"branch":"gh-pages","path":"/"}}'
-          status=$(curl -sS -o /tmp/pages-response.json -w "%{http_code}" \
-            -X PUT \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" \
-            -d "${payload}")
-
-          if [ "${status}" = "404" ]; then
-            status=$(curl -sS -o /tmp/pages-response.json -w "%{http_code}" \
-              -X POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" \
-              -d "${payload}")
-          fi
-
-          cat /tmp/pages-response.json
-          if [ "${status}" -lt 200 ] || [ "${status}" -ge 300 ]; then
-            echo "::warning::Nao foi possivel trocar a fonte do GitHub Pages automaticamente. Configure Pages para usar branch gh-pages / root."
-          fi
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
