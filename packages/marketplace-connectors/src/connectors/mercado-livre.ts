@@ -18,19 +18,27 @@ export class MercadoLivreConnector implements MarketplaceConnector {
   constructor(private readonly env: ConnectorEnv) {}
 
   async searchOffers(params: SearchOffersParams): Promise<OfferCandidate[]> {
-    const keyword = [params.category, params.keyword].filter(Boolean).join(" ") || "ofertas";
-    const limit = Math.min(params.limit ?? 20, 50);
+    const primaryKeyword = [params.category, params.keyword].filter(Boolean).join(" ") || "ofertas";
+    const requestedLimit = Math.min(params.limit ?? 20, 100);
+    const hasQueryParams = Boolean(params.keyword || params.category);
 
     let apiError: Error | undefined;
-    if (this.env.MELI_ACCESS_TOKEN) {
+    if (this.env.MELI_ACCESS_TOKEN || hasQueryParams) {
       try {
-        return await this.searchApiOffers(params, keyword, limit);
+        return await this.searchApiOffers(params, requestedLimit);
       } catch (error) {
         apiError = error instanceof Error ? error : new Error("Falha desconhecida na API do Mercado Livre.");
       }
     }
 
-    const publicOffers = await this.searchPublicOffers(params, keyword, limit, apiError?.message);
+    if (hasQueryParams) {
+      const reason = apiError ? ` ${apiError.message}` : "";
+      throw new Error(
+        `Para buscar Mercado Livre com palavra-chave, categoria, filtros e limite solicitado, configure um Access Token OAuth valido.${reason}`
+      );
+    }
+
+    const publicOffers = await this.searchPublicOffers(params, primaryKeyword, requestedLimit, apiError?.message);
     if (publicOffers.length) return publicOffers;
 
     if (apiError) {
@@ -42,11 +50,49 @@ export class MercadoLivreConnector implements MarketplaceConnector {
     throw new Error("Mercado Livre nao retornou ofertas na vitrine publica. Tente reduzir filtros ou importar por link.");
   }
 
-  private async searchApiOffers(params: SearchOffersParams, keyword: string, limit: number) {
+  private async searchApiOffers(params: SearchOffersParams, requestedLimit: number) {
+    const collected = new Map<string, OfferCandidate>();
+    const queries = buildSearchQueries(params);
+    const pageLimit = Math.min(50, Math.max(requestedLimit, 20));
+    const maxPagesPerQuery = Math.max(2, Math.ceil((requestedLimit * 3) / pageLimit));
+
+    for (const query of queries) {
+      let offset = 0;
+      for (let page = 0; page < maxPagesPerQuery && collected.size < requestedLimit; page += 1) {
+        const payload = await this.fetchSearchPage(query, pageLimit, offset, params.sortBy);
+        const pageCandidates = applyOfferFilters(
+          payload.results.map((item) => this.toOfferCandidate(item, params.category)),
+          params
+        );
+
+        for (const candidate of pageCandidates) {
+          collected.set(candidate.externalId ?? candidate.productUrl, candidate);
+          if (collected.size >= requestedLimit) break;
+        }
+
+        const received = payload.results.length;
+        const total = payload.paging?.total ?? 0;
+        if (received < pageLimit || offset + pageLimit >= total) break;
+        offset += pageLimit;
+      }
+
+      if (collected.size >= requestedLimit) break;
+    }
+
+    return sortCandidates([...collected.values()], params.sortBy).slice(0, requestedLimit);
+  }
+
+  private async fetchSearchPage(
+    keyword: string,
+    limit: number,
+    offset: number,
+    sortBy: SearchOffersParams["sortBy"]
+  ) {
     const searchUrl = new URL("https://api.mercadolibre.com/sites/MLB/search");
     searchUrl.searchParams.set("q", keyword);
     searchUrl.searchParams.set("limit", String(limit));
-    searchUrl.searchParams.set("sort", params.sortBy === "price" ? "price_asc" : "relevance");
+    searchUrl.searchParams.set("offset", String(offset));
+    searchUrl.searchParams.set("sort", sortBy === "price" ? "price_asc" : "relevance");
 
     const response = await fetch(searchUrl, {
       headers: {
@@ -66,13 +112,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
       throw new Error(`Mercado Livre respondeu ${response.status} ao buscar ofertas.${suffix}`);
     }
 
-    const payload = (await response.json()) as MercadoLivreSearchResponse;
-    const candidates = applyOfferFilters(
-      payload.results.map((item) => this.toOfferCandidate(item, params.category)),
-      params
-    );
-
-    return sortCandidates(candidates, params.sortBy).slice(0, limit);
+    return (await response.json()) as MercadoLivreSearchResponse;
   }
 
   private async searchPublicOffers(params: SearchOffersParams, keyword: string, limit: number, fallbackReason?: string) {
@@ -372,6 +412,11 @@ async function readErrorDetails(response: Response) {
 }
 
 interface MercadoLivreSearchResponse {
+  paging?: {
+    total?: number;
+    offset?: number;
+    limit?: number;
+  };
   results: MercadoLivreSearchItem[];
 }
 
@@ -493,6 +538,7 @@ const categoryTerms: Record<string, string[]> = {
     "acucar",
     "alimento",
     "arroz",
+    "aveia",
     "azeite",
     "biscoito",
     "cafe",
@@ -526,6 +572,24 @@ const categoryTerms: Record<string, string[]> = {
   pets: ["cao", "cachorro", "gato", "pet", "racao", "tapete higienico"]
 };
 
+function buildSearchQueries(params: SearchOffersParams) {
+  const keyword = params.keyword?.trim();
+  const category = params.category?.trim();
+  const normalizedCategory = category ? normalizeSearchText(category) : "";
+
+  if (keyword && category) {
+    return uniqueStrings([`${category} ${keyword}`, keyword]);
+  }
+
+  if (keyword) return [keyword];
+
+  if (category) {
+    return uniqueStrings([category, ...(categoryTerms[normalizedCategory] ?? []).slice(0, 8)]);
+  }
+
+  return ["ofertas"];
+}
+
 function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersParams) {
   const keywordWords = normalizeSearchText(params.keyword ?? "")
     .split(/\s+/)
@@ -547,6 +611,19 @@ function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersPar
     if (params.minCommission !== undefined && (candidate.commissionPercent ?? 0) < params.minCommission) return false;
     return true;
   });
+}
+
+function uniqueStrings(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = value.trim();
+    const key = normalizeSearchText(normalized);
+    if (!normalized || seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
 }
 
 function getCandidateSearchText(candidate: OfferCandidate) {
