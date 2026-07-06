@@ -176,7 +176,7 @@ router.post(
     const targets = buildRadarTargets(params.keyword, categories);
     const keys = params.marketplaceKey
       ? [params.marketplaceKey as MarketplaceKey]
-      : (await prisma.marketplace.findMany({ where: { isActive: true }, select: { key: true } })).map((item) => item.key);
+      : [MarketplaceKey.MERCADO_LIVRE];
 
     if (!keys.length) {
       throw new HttpError(400, "Nenhum marketplace ativo encontrado para o Radar.");
@@ -573,14 +573,6 @@ function uniqueRadarCategories(categories: string[]) {
 
 function buildRadarTargets(keyword: string | undefined, categories: string[]) {
   const cleanKeyword = keyword?.trim();
-  if (cleanKeyword && categories.length) {
-    return categories.map((category) => ({
-      label: `${cleanKeyword} / ${category}`,
-      keyword: cleanKeyword,
-      category
-    }));
-  }
-
   if (cleanKeyword) {
     return [{ label: cleanKeyword, keyword: cleanKeyword, category: undefined }];
   }

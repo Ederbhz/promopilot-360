@@ -8,12 +8,6 @@ import { Panel } from "@/components/Panel";
 import { StatusBadge } from "@/components/StatusBadge";
 import { apiFetch, postJson } from "@/lib/api";
 
-interface Marketplace {
-  id: string;
-  key: string;
-  name: string;
-}
-
 interface Offer {
   id: string;
   status: string;
@@ -60,12 +54,10 @@ const categoryOptions = [
 ];
 
 export default function RadarPage() {
-  const [marketplaces, setMarketplaces] = useState<Marketplace[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [generatedOffers, setGeneratedOffers] = useState<Offer[]>([]);
   const [groups, setGroups] = useState<RadarGroup[]>([]);
-  const [marketplaceKey, setMarketplaceKey] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [limitPerCategory, setLimitPerCategory] = useState("10");
@@ -80,13 +72,6 @@ export default function RadarPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    apiFetch<Marketplace[]>("/marketplaces")
-      .then((items) => {
-        setMarketplaces(items);
-        const mercadoLivre = items.find((marketplace) => marketplace.key === "MERCADO_LIVRE");
-        if (mercadoLivre) setMarketplaceKey(mercadoLivre.key);
-      })
-      .catch(() => setMarketplaces([]));
     apiFetch<Campaign[]>("/campaigns").then(setCampaigns).catch(() => setCampaigns([]));
     apiFetch<Offer[]>("/offers?scope=generated").then(setGeneratedOffers).catch(() => setGeneratedOffers([]));
   }, []);
@@ -111,9 +96,8 @@ export default function RadarPage() {
         warnings?: RadarWarning[];
         skippedGenerated?: number;
       }>("/offers/opportunity-radar", {
-        marketplaceKey: marketplaceKey || undefined,
         keyword: keyword || undefined,
-        categories: selectedCategories,
+        categories: keyword ? [] : selectedCategories,
         limitPerCategory: Number(limitPerCategory) || 10,
         minDiscount: numberOrUndefined(minDiscount),
         minPrice: numberOrUndefined(minPrice),
@@ -399,29 +383,14 @@ export default function RadarPage() {
       <PageHeader title="Radar de oportunidades" eyebrow="Pesquisa" />
       <Panel>
         <form onSubmit={submit} className="grid gap-4">
-          <div className="grid gap-3 lg:grid-cols-[0.9fr_2fr_0.8fr]">
-            <label>
-              <span className="mb-1 block text-sm font-medium">Fonte</span>
-              <select
-                className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-                value={marketplaceKey}
-                onChange={(event) => setMarketplaceKey(event.target.value)}
-              >
-                <option value="">Todos ativos</option>
-                {marketplaces.map((marketplace) => (
-                  <option value={marketplace.key} key={marketplace.id}>
-                    {marketplace.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="grid gap-3 lg:grid-cols-[2fr_0.7fr]">
             <label>
               <span className="mb-1 block text-sm font-medium">Pesquisa livre</span>
               <input
                 className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="tv, camisa, creatina, air fryer"
+                placeholder="tenis, tv, camisa, creatina, air fryer"
               />
             </label>
             <label>
@@ -502,12 +471,11 @@ export default function RadarPage() {
       {message ? <p className="mt-4 rounded-md bg-leaf/10 px-3 py-2 text-sm text-leaf">{message}</p> : null}
       {warnings.length ? (
         <Panel className="mt-4 border-amber/40 bg-amber/10 text-sm">
-          <p className="mb-2 font-semibold text-ink">Avisos dos marketplaces</p>
+          <p className="mb-2 font-semibold text-ink">Avisos da busca</p>
           <div className="grid gap-2">
             {warnings.slice(0, 5).map((warning) => (
               <p key={`${warning.marketplaceKey}-${warning.category}-${warning.message}`} className="text-[var(--muted)]">
-                <span className="font-semibold text-ink">{warning.marketplaceKey}/{warning.category}:</span>{" "}
-                {warning.message}
+                <span className="font-semibold text-ink">{warning.category}:</span> {warning.message}
               </p>
             ))}
           </div>

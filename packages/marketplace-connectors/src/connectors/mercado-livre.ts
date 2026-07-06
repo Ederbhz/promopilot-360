@@ -121,6 +121,8 @@ export class MercadoLivreConnector implements MarketplaceConnector {
     offersUrl.searchParams.set("limit", String(fallbackLimit));
     if (params.keyword || params.category) {
       offersUrl.searchParams.set("search", keyword);
+      const categoryId = await this.findPublicSearchCategoryId(keyword);
+      if (categoryId) offersUrl.searchParams.set("category", categoryId);
     }
 
     const response = await fetch(offersUrl, {
@@ -246,6 +248,25 @@ export class MercadoLivreConnector implements MarketplaceConnector {
           ? "Tag configurada. Para gerar meli.la automaticamente, informe Cookie e X-CSRF-Token do Portal de Afiliados."
           : "Mercado Livre em modo assistido com garimpo pela vitrine publica de ofertas."
     };
+  }
+
+  private async findPublicSearchCategoryId(keyword: string) {
+    const hint = getPublicOfferCategoryHint(keyword);
+    if (hint) return hint;
+
+    const discoveryUrl = new URL("https://api.mercadolibre.com/sites/MLB/domain_discovery/search");
+    discoveryUrl.searchParams.set("q", keyword);
+    discoveryUrl.searchParams.set("limit", "1");
+    const response = await fetch(discoveryUrl, {
+      headers: {
+        accept: "application/json",
+        "user-agent": "PromoPilot360/0.1"
+      }
+    }).catch(() => null);
+    if (!response?.ok) return undefined;
+
+    const payload = (await response.json().catch(() => [])) as Array<{ category_id?: string }>;
+    return payload[0]?.category_id;
   }
 
   private toOfferCandidate(item: MercadoLivreSearchItem, preferredCategory?: string): OfferCandidate {
@@ -576,6 +597,19 @@ const categoryTerms: Record<string, string[]> = {
   infantil: ["bebe", "brinquedo", "crianca", "fralda", "infantil", "mamadeira"],
   pets: ["cao", "cachorro", "gato", "pet", "racao", "tapete higienico"]
 };
+
+const publicOfferCategoryHints: Array<{ terms: string[]; categoryId: string }> = [
+  { terms: ["tenis", "sneaker", "calcado", "calcados", "sapato"], categoryId: "MLB23332" },
+  { terms: ["tv", "televisor", "smart tv"], categoryId: "MLB1002" },
+  { terms: ["creatina", "whey", "suplemento", "suplementos"], categoryId: "MLB122102" },
+  { terms: ["air fryer", "fritadeira eletrica", "fritadeira sem oleo"], categoryId: "MLB456045" },
+  { terms: ["camisa", "camiseta", "blusa"], categoryId: "MLB1430" }
+];
+
+function getPublicOfferCategoryHint(value: string) {
+  const normalized = normalizeSearchText(value);
+  return publicOfferCategoryHints.find((hint) => hint.terms.some((term) => normalized.includes(term)))?.categoryId;
+}
 
 function buildSearchQueries(params: SearchOffersParams) {
   const keyword = params.keyword?.trim();
