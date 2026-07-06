@@ -12,7 +12,8 @@ import {
   Megaphone,
   MessageCircle,
   Search,
-  Settings
+  Settings,
+  TrendingUp
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -23,6 +24,7 @@ import { assetPath } from "@/lib/assets";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/garimpar", label: "Garimpar", icon: Search },
+  { href: "/radar", label: "Radar", icon: TrendingUp },
   { href: "/links-manuais", label: "Links", icon: Link2 },
   { href: "/campanhas", label: "Campanhas", icon: Megaphone },
   { href: "/agendador", label: "Agendador", icon: CalendarClock },

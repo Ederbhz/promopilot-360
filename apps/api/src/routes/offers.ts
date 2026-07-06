@@ -7,6 +7,7 @@ import {
   detectMarketplaceKey,
   manualUrlSchema,
   messageRenderSchema,
+  opportunityRadarSchema,
   searchOffersSchema,
   type OfferCandidate,
   type ProductExtractionResult
@@ -164,6 +165,87 @@ router.post(
     }
 
     res.json({ count: saved.length, offers: saved, warnings, skippedGenerated });
+  })
+);
+
+router.post(
+  "/opportunity-radar",
+  asyncHandler(async (req, res) => {
+    const params = opportunityRadarSchema.parse(req.body);
+    const categories = uniqueRadarCategories(params.categories);
+    const keys = params.marketplaceKey
+      ? [params.marketplaceKey as MarketplaceKey]
+      : (await prisma.marketplace.findMany({ where: { isActive: true }, select: { key: true } })).map((item) => item.key);
+
+    if (!keys.length) {
+      throw new HttpError(400, "Nenhum marketplace ativo encontrado para o Radar.");
+    }
+
+    const warnings: Array<{ marketplaceKey: string; category: string; message: string }> = [];
+    const groups: Array<{ category: string; count: number; offers: Awaited<ReturnType<typeof persistCandidate>>[] }> = [];
+    const saved: Awaited<ReturnType<typeof persistCandidate>>[] = [];
+    const seen = new Set<string>();
+    let skippedGenerated = 0;
+
+    for (const category of categories) {
+      const groupOffers: Awaited<ReturnType<typeof persistCandidate>>[] = [];
+
+      for (const key of keys) {
+        if (groupOffers.length >= params.limitPerCategory) break;
+
+        const connector = await getConnectorForMarketplace(key as MarketplaceKey);
+        try {
+          const candidates = await connector.searchOffers({
+            marketplaceKey: key,
+            category,
+            minPrice: params.minPrice,
+            maxPrice: params.maxPrice,
+            minDiscount: params.minDiscount,
+            limit: Math.min(100, Math.max(params.limitPerCategory * 3, params.limitPerCategory)),
+            sortBy: params.sortBy
+          });
+
+          for (const candidate of candidates) {
+            if (groupOffers.length >= params.limitPerCategory) break;
+
+            const identity = getCandidateIdentity(candidate);
+            if (seen.has(identity)) continue;
+            seen.add(identity);
+
+            const radarCandidate: OfferCandidate = {
+              ...candidate,
+              category: candidate.category ?? category,
+              score: candidate.score ?? calculateOfferScore(candidate),
+              metadata: {
+                ...(candidate.metadata ?? {}),
+                radarCategory: category,
+                radarSource: "opportunity-radar",
+                radarSortBy: params.sortBy
+              }
+            };
+
+            if (await hasGeneratedOfferForCandidate(radarCandidate)) {
+              skippedGenerated += 1;
+              continue;
+            }
+
+            const offer = await persistCandidate(radarCandidate);
+            groupOffers.push(offer);
+            saved.push(offer);
+          }
+        } catch (error) {
+          warnings.push({
+            marketplaceKey: key,
+            category,
+            message: error instanceof Error ? error.message : "Falha desconhecida ao buscar oportunidades."
+          });
+        }
+      }
+
+      groups.push({ category, count: groupOffers.length, offers: groupOffers });
+    }
+
+    res.json({ count: saved.length, offers: saved, groups, warnings, skippedGenerated });
   })
 );
 
@@ -470,6 +552,23 @@ function hasGeneratedIdentity(
     keys.urls.has(offer.product.productUrl) ||
     Boolean(offer.product.externalId && keys.externalIds.has(offer.product.externalId))
   );
+}
+
+function uniqueRadarCategories(categories: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const category of categories) {
+    const value = category.trim();
+    const key = value.toLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    result.push(value);
+  }
+  return result;
+}
+
+function getCandidateIdentity(candidate: OfferCandidate) {
+  return `${candidate.marketplaceKey}|${candidate.externalId ?? candidate.productUrl}`;
 }
 
 function normalizeNumber(value: unknown, min: number, max: number) {

@@ -59,6 +59,18 @@ export const searchOffersSchema = z.object({
     .default("score")
 });
 
+export const opportunityRadarSchema = z.object({
+  marketplaceKey: z.string().trim().optional(),
+  categories: z.array(z.string().trim().min(2)).min(1).max(12),
+  limitPerCategory: z.coerce.number().int().min(1).max(50).default(10),
+  minPrice: z.coerce.number().min(0).optional(),
+  maxPrice: z.coerce.number().min(0).optional(),
+  minDiscount: z.coerce.number().min(0).max(100).optional(),
+  sortBy: z
+    .enum(["discount", "rating", "price", "commission", "score"])
+    .default("score")
+});
+
 export const generateAffiliateLinkSchema = z.object({
   marketplaceKey: z.string().trim(),
   destinationUrl: urlSchema,
@@ -80,6 +92,7 @@ export const messageRenderSchema = z.object({
 });
 
 export type SearchOffersParams = z.infer<typeof searchOffersSchema>;
+export type OpportunityRadarParams = z.infer<typeof opportunityRadarSchema>;
 export type GenerateAffiliateLinkParams = z.infer<typeof generateAffiliateLinkSchema>;
 
 export interface OfferCandidate {
