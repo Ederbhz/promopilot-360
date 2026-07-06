@@ -119,6 +119,9 @@ export class MercadoLivreConnector implements MarketplaceConnector {
     const offersUrl = new URL("https://www.mercadolivre.com.br/ofertas");
     const fallbackLimit = params.keyword || params.category ? Math.min(100, Math.max(limit * 5, 50)) : limit;
     offersUrl.searchParams.set("limit", String(fallbackLimit));
+    if (params.keyword || params.category) {
+      offersUrl.searchParams.set("search", keyword);
+    }
 
     const response = await fetch(offersUrl, {
       headers: {
@@ -596,13 +599,13 @@ function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersPar
   const keywordWords = normalizeSearchText(params.keyword ?? "")
     .split(/\s+/)
     .map((word) => word.trim())
-    .filter((word) => word.length > 2 && !["oferta", "ofertas", "promocao", "promocoes"].includes(word));
+    .filter((word) => word.length >= 2 && !["oferta", "ofertas", "promocao", "promocoes"].includes(word));
 
   return candidates.filter((candidate) => {
     const haystack = getCandidateSearchText(candidate);
     if (params.category && !matchesCategory(haystack, params.category)) return false;
     if (keywordWords.length) {
-      if (!keywordWords.every((word) => haystack.includes(word))) return false;
+      if (!keywordWords.every((word) => matchesKeywordWord(haystack, word))) return false;
     }
     if (params.minPrice !== undefined && (candidate.currentPrice ?? 0) < params.minPrice) return false;
     if (params.maxPrice !== undefined && (candidate.currentPrice ?? 0) > params.maxPrice) return false;
@@ -613,6 +616,17 @@ function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersPar
     if (params.minCommission !== undefined && (candidate.commissionPercent ?? 0) < params.minCommission) return false;
     return true;
   });
+}
+
+function matchesKeywordWord(normalizedHaystack: string, word: string) {
+  if (word.length <= 2) {
+    return new RegExp(`(^|[^a-z0-9])${escapeRegExp(word)}([^a-z0-9]|$)`).test(normalizedHaystack);
+  }
+  return normalizedHaystack.includes(word);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function uniqueStrings(values: string[]) {

@@ -47,7 +47,17 @@ interface RadarWarning {
 
 type OfferUpdate = Partial<Offer> & { id: string };
 
-const defaultCategories = "fitness, alimentos, suplementos";
+const categoryOptions = [
+  "Fitness",
+  "Alimentos",
+  "Suplementos",
+  "Beleza",
+  "Moda",
+  "Casa e jardim",
+  "Eletronicos",
+  "Infantil",
+  "Pets"
+];
 
 export default function RadarPage() {
   const [marketplaces, setMarketplaces] = useState<Marketplace[]>([]);
@@ -56,8 +66,8 @@ export default function RadarPage() {
   const [generatedOffers, setGeneratedOffers] = useState<Offer[]>([]);
   const [groups, setGroups] = useState<RadarGroup[]>([]);
   const [marketplaceKey, setMarketplaceKey] = useState("");
-  const [categories, setCategories] = useState(defaultCategories);
-  const [sortBy, setSortBy] = useState("score");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [limitPerCategory, setLimitPerCategory] = useState("10");
   const [minDiscount, setMinDiscount] = useState("");
   const [minPrice, setMinPrice] = useState("");
@@ -83,9 +93,9 @@ export default function RadarPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const parsedCategories = parseCategories(categories);
-    if (!parsedCategories.length) {
-      setError("Informe pelo menos uma categoria para o Radar.");
+    const keyword = searchTerm.trim();
+    if (!keyword && !selectedCategories.length) {
+      setError("Digite uma pesquisa livre ou selecione pelo menos uma categoria.");
       return;
     }
 
@@ -102,12 +112,13 @@ export default function RadarPage() {
         skippedGenerated?: number;
       }>("/offers/opportunity-radar", {
         marketplaceKey: marketplaceKey || undefined,
-        categories: parsedCategories,
+        keyword: keyword || undefined,
+        categories: selectedCategories,
         limitPerCategory: Number(limitPerCategory) || 10,
         minDiscount: numberOrUndefined(minDiscount),
         minPrice: numberOrUndefined(minPrice),
         maxPrice: numberOrUndefined(maxPrice),
-        sortBy
+        sortBy: "score"
       });
 
       setOffers(result.offers);
@@ -234,6 +245,12 @@ export default function RadarPage() {
   function updateOfferInLists(updated: OfferUpdate) {
     setOffers((current) => current.map((offer) => (offer.id === updated.id ? mergeOffer(offer, updated) : offer)));
     setGeneratedOffers((current) => current.map((offer) => (offer.id === updated.id ? mergeOffer(offer, updated) : offer)));
+  }
+
+  function toggleCategory(category: string) {
+    setSelectedCategories((current) =>
+      current.includes(category) ? current.filter((item) => item !== category) : [...current, category]
+    );
   }
 
   function renderOfferCard(offer: Offer, mode: "pending" | "generated") {
@@ -381,91 +398,103 @@ export default function RadarPage() {
     <>
       <PageHeader title="Radar de oportunidades" eyebrow="Pesquisa" />
       <Panel>
-        <form onSubmit={submit} className="grid gap-3 lg:grid-cols-4">
-          <label>
-            <span className="mb-1 block text-sm font-medium">Marketplace</span>
-            <select
-              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-              value={marketplaceKey}
-              onChange={(event) => setMarketplaceKey(event.target.value)}
+        <form onSubmit={submit} className="grid gap-4">
+          <div className="grid gap-3 lg:grid-cols-[0.9fr_2fr_0.8fr]">
+            <label>
+              <span className="mb-1 block text-sm font-medium">Fonte</span>
+              <select
+                className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                value={marketplaceKey}
+                onChange={(event) => setMarketplaceKey(event.target.value)}
+              >
+                <option value="">Todos ativos</option>
+                {marketplaces.map((marketplace) => (
+                  <option value={marketplace.key} key={marketplace.id}>
+                    {marketplace.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="mb-1 block text-sm font-medium">Pesquisa livre</span>
+              <input
+                className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="tv, camisa, creatina, air fryer"
+              />
+            </label>
+            <label>
+              <span className="mb-1 block text-sm font-medium">Limite por busca</span>
+              <input
+                className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                inputMode="numeric"
+                value={limitPerCategory}
+                onChange={(event) => setLimitPerCategory(event.target.value)}
+              />
+            </label>
+          </div>
+          <div>
+            <span className="mb-2 block text-sm font-medium">Categorias</span>
+            <div className="flex flex-wrap gap-2">
+              {categoryOptions.map((category) => {
+                const selected = selectedCategories.includes(category);
+                return (
+                  <button
+                    className={`focus-ring rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                      selected
+                        ? "border-leaf bg-leaf text-white"
+                        : "border-[var(--border)] bg-white text-ink hover:bg-mist"
+                    }`}
+                    key={category}
+                    onClick={() => toggleCategory(category)}
+                    type="button"
+                  >
+                    {category}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto]">
+            <label>
+              <span className="mb-1 block text-sm font-medium">Desconto minimo</span>
+              <input
+                className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                inputMode="decimal"
+                value={minDiscount}
+                onChange={(event) => setMinDiscount(event.target.value)}
+                placeholder="0"
+              />
+            </label>
+            <label>
+              <span className="mb-1 block text-sm font-medium">Preco minimo</span>
+              <input
+                className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                inputMode="decimal"
+                value={minPrice}
+                onChange={(event) => setMinPrice(event.target.value)}
+                placeholder="50"
+              />
+            </label>
+            <label>
+              <span className="mb-1 block text-sm font-medium">Preco maximo</span>
+              <input
+                className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
+                inputMode="decimal"
+                value={maxPrice}
+                onChange={(event) => setMaxPrice(event.target.value)}
+                placeholder="100000"
+              />
+            </label>
+            <button
+              className="focus-ring mt-auto flex min-w-56 items-center justify-center gap-2 rounded-md bg-leaf px-4 py-2 font-semibold text-white hover:bg-leaf/90 disabled:opacity-70"
+              disabled={loading}
             >
-              <option value="">Todos ativos</option>
-              {marketplaces.map((marketplace) => (
-                <option value={marketplace.key} key={marketplace.id}>
-                  {marketplace.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="lg:col-span-2">
-            <span className="mb-1 block text-sm font-medium">Categorias</span>
-            <input
-              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-              value={categories}
-              onChange={(event) => setCategories(event.target.value)}
-              placeholder="fitness, alimentos, suplementos"
-            />
-          </label>
-          <label>
-            <span className="mb-1 block text-sm font-medium">Prioridade</span>
-            <select
-              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-              value={sortBy}
-              onChange={(event) => setSortBy(event.target.value)}
-            >
-              <option value="score">Melhor score</option>
-              <option value="discount">Maior desconto</option>
-              <option value="price">Menor preco</option>
-              <option value="rating">Melhor avaliacao</option>
-              <option value="commission">Maior comissao</option>
-            </select>
-          </label>
-          <label>
-            <span className="mb-1 block text-sm font-medium">Limite por categoria</span>
-            <input
-              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-              inputMode="numeric"
-              value={limitPerCategory}
-              onChange={(event) => setLimitPerCategory(event.target.value)}
-            />
-          </label>
-          <label>
-            <span className="mb-1 block text-sm font-medium">Desconto minimo</span>
-            <input
-              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-              inputMode="decimal"
-              value={minDiscount}
-              onChange={(event) => setMinDiscount(event.target.value)}
-              placeholder="0"
-            />
-          </label>
-          <label>
-            <span className="mb-1 block text-sm font-medium">Preco minimo</span>
-            <input
-              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-              inputMode="decimal"
-              value={minPrice}
-              onChange={(event) => setMinPrice(event.target.value)}
-              placeholder="50"
-            />
-          </label>
-          <label>
-            <span className="mb-1 block text-sm font-medium">Preco maximo</span>
-            <input
-              className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2"
-              inputMode="decimal"
-              value={maxPrice}
-              onChange={(event) => setMaxPrice(event.target.value)}
-              placeholder="100000"
-            />
-          </label>
-          <button
-            className="focus-ring mt-auto flex items-center justify-center gap-2 rounded-md bg-leaf px-4 py-2 font-semibold text-white hover:bg-leaf/90 disabled:opacity-70"
-            disabled={loading}
-          >
-            <Search size={17} aria-hidden />
-            {loading ? "Buscando..." : "Buscar oportunidades"}
-          </button>
+              <Search size={17} aria-hidden />
+              {loading ? "Buscando..." : "Buscar oportunidades"}
+            </button>
+          </div>
         </form>
       </Panel>
 
@@ -506,7 +535,7 @@ export default function RadarPage() {
         {offers.length ? (
           <div className="grid gap-3">{offers.map((offer) => renderOfferCard(offer, "pending"))}</div>
         ) : (
-          <Panel className="text-sm text-[var(--muted)]">Informe categorias e execute o Radar para listar oportunidades.</Panel>
+          <Panel className="text-sm text-[var(--muted)]">Digite uma pesquisa livre ou selecione categorias para listar oportunidades.</Panel>
         )}
       </section>
 
@@ -525,19 +554,6 @@ export default function RadarPage() {
       </section>
     </>
   );
-}
-
-function parseCategories(value: string) {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const item of value.split(/[,\n;]/)) {
-    const category = item.trim();
-    const key = category.toLowerCase();
-    if (!category || seen.has(key)) continue;
-    seen.add(key);
-    result.push(category);
-  }
-  return result;
 }
 
 function mergeOffer(current: Offer, updated: OfferUpdate): Offer {

@@ -59,17 +59,28 @@ export const searchOffersSchema = z.object({
     .default("score")
 });
 
-export const opportunityRadarSchema = z.object({
-  marketplaceKey: z.string().trim().optional(),
-  categories: z.array(z.string().trim().min(2)).min(1).max(12),
-  limitPerCategory: z.coerce.number().int().min(1).max(50).default(10),
-  minPrice: z.coerce.number().min(0).optional(),
-  maxPrice: z.coerce.number().min(0).optional(),
-  minDiscount: z.coerce.number().min(0).max(100).optional(),
-  sortBy: z
-    .enum(["discount", "rating", "price", "commission", "score"])
-    .default("score")
-});
+export const opportunityRadarSchema = z
+  .object({
+    marketplaceKey: z.string().trim().optional(),
+    keyword: z.string().trim().optional(),
+    categories: z.array(z.string().trim().min(2)).max(12).default([]),
+    limitPerCategory: z.coerce.number().int().min(1).max(50).default(10),
+    minPrice: z.coerce.number().min(0).optional(),
+    maxPrice: z.coerce.number().min(0).optional(),
+    minDiscount: z.coerce.number().min(0).max(100).optional(),
+    sortBy: z
+      .enum(["discount", "rating", "price", "commission", "score"])
+      .default("score")
+  })
+  .superRefine((data, ctx) => {
+    if (!data.keyword?.trim() && !data.categories.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe uma pesquisa livre ou selecione pelo menos uma categoria.",
+        path: ["keyword"]
+      });
+    }
+  });
 
 export const generateAffiliateLinkSchema = z.object({
   marketplaceKey: z.string().trim(),

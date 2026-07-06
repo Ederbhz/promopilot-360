@@ -173,6 +173,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const params = opportunityRadarSchema.parse(req.body);
     const categories = uniqueRadarCategories(params.categories);
+    const targets = buildRadarTargets(params.keyword, categories);
     const keys = params.marketplaceKey
       ? [params.marketplaceKey as MarketplaceKey]
       : (await prisma.marketplace.findMany({ where: { isActive: true }, select: { key: true } })).map((item) => item.key);
@@ -187,7 +188,7 @@ router.post(
     const seen = new Set<string>();
     let skippedGenerated = 0;
 
-    for (const category of categories) {
+    for (const target of targets) {
       const groupOffers: Awaited<ReturnType<typeof persistCandidate>>[] = [];
 
       for (const key of keys) {
@@ -197,7 +198,8 @@ router.post(
         try {
           const candidates = await connector.searchOffers({
             marketplaceKey: key,
-            category,
+            keyword: target.keyword,
+            category: target.category,
             minPrice: params.minPrice,
             maxPrice: params.maxPrice,
             minDiscount: params.minDiscount,
@@ -214,11 +216,13 @@ router.post(
 
             const radarCandidate: OfferCandidate = {
               ...candidate,
-              category: candidate.category ?? category,
+              category: candidate.category ?? target.category ?? target.label,
               score: candidate.score ?? calculateOfferScore(candidate),
               metadata: {
                 ...(candidate.metadata ?? {}),
-                radarCategory: category,
+                radarCategory: target.category ?? null,
+                radarKeyword: target.keyword ?? null,
+                radarLabel: target.label,
                 radarSource: "opportunity-radar",
                 radarSortBy: params.sortBy
               }
@@ -236,13 +240,13 @@ router.post(
         } catch (error) {
           warnings.push({
             marketplaceKey: key,
-            category,
+            category: target.label,
             message: error instanceof Error ? error.message : "Falha desconhecida ao buscar oportunidades."
           });
         }
       }
 
-      groups.push({ category, count: groupOffers.length, offers: groupOffers });
+      groups.push({ category: target.label, count: groupOffers.length, offers: groupOffers });
     }
 
     res.json({ count: saved.length, offers: saved, groups, warnings, skippedGenerated });
@@ -565,6 +569,23 @@ function uniqueRadarCategories(categories: string[]) {
     result.push(value);
   }
   return result;
+}
+
+function buildRadarTargets(keyword: string | undefined, categories: string[]) {
+  const cleanKeyword = keyword?.trim();
+  if (cleanKeyword && categories.length) {
+    return categories.map((category) => ({
+      label: `${cleanKeyword} / ${category}`,
+      keyword: cleanKeyword,
+      category
+    }));
+  }
+
+  if (cleanKeyword) {
+    return [{ label: cleanKeyword, keyword: cleanKeyword, category: undefined }];
+  }
+
+  return categories.map((category) => ({ label: category, keyword: undefined, category }));
 }
 
 function getCandidateIdentity(candidate: OfferCandidate) {
