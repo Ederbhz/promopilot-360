@@ -39,6 +39,12 @@ interface RadarGroup {
   offers: Offer[];
 }
 
+interface RadarWarning {
+  marketplaceKey: string;
+  category: string;
+  message: string;
+}
+
 type OfferUpdate = Partial<Offer> & { id: string };
 
 const defaultCategories = "fitness, alimentos, suplementos";
@@ -58,12 +64,19 @@ export default function RadarPage() {
   const [maxPrice, setMaxPrice] = useState("");
   const [campaignByOffer, setCampaignByOffer] = useState<Record<string, string>>({});
   const [affiliateUrlByOffer, setAffiliateUrlByOffer] = useState<Record<string, string>>({});
+  const [warnings, setWarnings] = useState<RadarWarning[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    apiFetch<Marketplace[]>("/marketplaces").then(setMarketplaces).catch(() => setMarketplaces([]));
+    apiFetch<Marketplace[]>("/marketplaces")
+      .then((items) => {
+        setMarketplaces(items);
+        const mercadoLivre = items.find((marketplace) => marketplace.key === "MERCADO_LIVRE");
+        if (mercadoLivre) setMarketplaceKey(mercadoLivre.key);
+      })
+      .catch(() => setMarketplaces([]));
     apiFetch<Campaign[]>("/campaigns").then(setCampaigns).catch(() => setCampaigns([]));
     apiFetch<Offer[]>("/offers?scope=generated").then(setGeneratedOffers).catch(() => setGeneratedOffers([]));
   }, []);
@@ -79,12 +92,13 @@ export default function RadarPage() {
     setLoading(true);
     setError("");
     setMessage("");
+    setWarnings([]);
     try {
       const result = await postJson<{
         count: number;
         offers: Offer[];
         groups: RadarGroup[];
-        warnings?: Array<{ marketplaceKey: string; category: string; message: string }>;
+        warnings?: RadarWarning[];
         skippedGenerated?: number;
       }>("/offers/opportunity-radar", {
         marketplaceKey: marketplaceKey || undefined,
@@ -98,7 +112,7 @@ export default function RadarPage() {
 
       setOffers(result.offers);
       setGroups(result.groups ?? []);
-      const warnings = result.warnings ?? [];
+      setWarnings(result.warnings ?? []);
       const skippedMessage = result.skippedGenerated
         ? `${result.skippedGenerated} oportunidades ja tinham link gerado e foram ocultadas.`
         : "";
@@ -107,8 +121,7 @@ export default function RadarPage() {
           result.count
             ? `${result.count} oportunidades encontradas pelo Radar.`
             : "Nenhuma oportunidade encontrada com estes parametros.",
-          skippedMessage,
-          ...warnings.map((warning) => `${warning.marketplaceKey}/${warning.category}: ${warning.message}`)
+          skippedMessage
         ]
           .filter(Boolean)
           .join(" ")
@@ -458,6 +471,19 @@ export default function RadarPage() {
 
       {error ? <div className="mt-4"><ErrorLine message={error} /></div> : null}
       {message ? <p className="mt-4 rounded-md bg-leaf/10 px-3 py-2 text-sm text-leaf">{message}</p> : null}
+      {warnings.length ? (
+        <Panel className="mt-4 border-amber/40 bg-amber/10 text-sm">
+          <p className="mb-2 font-semibold text-ink">Avisos dos marketplaces</p>
+          <div className="grid gap-2">
+            {warnings.slice(0, 5).map((warning) => (
+              <p key={`${warning.marketplaceKey}-${warning.category}-${warning.message}`} className="text-[var(--muted)]">
+                <span className="font-semibold text-ink">{warning.marketplaceKey}/{warning.category}:</span>{" "}
+                {warning.message}
+              </p>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
 
       {groups.length ? (
         <div className="mt-4 flex flex-wrap gap-2">

@@ -31,15 +31,15 @@ export class MercadoLivreConnector implements MarketplaceConnector {
       }
     }
 
+    const publicOffers = await this.searchPublicOffers(params, primaryKeyword, requestedLimit, apiError?.message);
+    if (publicOffers.length) return publicOffers;
+
     if (hasQueryParams) {
       const reason = apiError ? ` ${apiError.message}` : "";
       throw new Error(
-        `Para buscar Mercado Livre com palavra-chave, categoria, filtros e limite solicitado, configure um Access Token OAuth valido.${reason}`
+        `Mercado Livre nao retornou ofertas compativeis com os filtros. A API parametrizada exige Access Token OAuth valido e a vitrine publica foi usada como fallback sem resultados suficientes.${reason}`
       );
     }
-
-    const publicOffers = await this.searchPublicOffers(params, primaryKeyword, requestedLimit, apiError?.message);
-    if (publicOffers.length) return publicOffers;
 
     if (apiError) {
       throw new Error(
@@ -117,7 +117,8 @@ export class MercadoLivreConnector implements MarketplaceConnector {
 
   private async searchPublicOffers(params: SearchOffersParams, keyword: string, limit: number, fallbackReason?: string) {
     const offersUrl = new URL("https://www.mercadolivre.com.br/ofertas");
-    offersUrl.searchParams.set("limit", String(limit));
+    const fallbackLimit = params.keyword || params.category ? Math.min(100, Math.max(limit * 5, 50)) : limit;
+    offersUrl.searchParams.set("limit", String(fallbackLimit));
 
     const response = await fetch(offersUrl, {
       headers: {
@@ -178,6 +179,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
         category: inferCategoryFromText([title, seller].filter(Boolean).join(" "), params.category),
         metadata: {
           source: "mercado-livre-public-offers",
+          requestedKeyword: keyword,
           sourceUrl: offersUrl.toString(),
           apiFallbackReason: fallbackReason
         }
