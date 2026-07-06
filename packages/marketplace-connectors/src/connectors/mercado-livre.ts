@@ -35,10 +35,7 @@ export class MercadoLivreConnector implements MarketplaceConnector {
     if (publicOffers.length) return publicOffers;
 
     if (hasQueryParams) {
-      const reason = apiError ? ` ${apiError.message}` : "";
-      throw new Error(
-        `Mercado Livre nao retornou ofertas compativeis com os filtros. A API parametrizada exige Access Token OAuth valido e a vitrine publica foi usada como fallback sem resultados suficientes.${reason}`
-      );
+      return [];
     }
 
     if (apiError) {
@@ -116,15 +113,25 @@ export class MercadoLivreConnector implements MarketplaceConnector {
   }
 
   private async searchPublicOffers(params: SearchOffersParams, keyword: string, limit: number, fallbackReason?: string) {
-    const offersUrl = new URL("https://www.mercadolivre.com.br/ofertas");
+    const baseOffersUrl = new URL("https://www.mercadolivre.com.br/ofertas");
     const fallbackLimit = params.keyword || params.category ? Math.min(100, Math.max(limit * 5, 50)) : limit;
-    offersUrl.searchParams.set("limit", String(fallbackLimit));
+    baseOffersUrl.searchParams.set("limit", String(fallbackLimit));
+    const offersUrls: URL[] = [];
     if (params.keyword || params.category) {
-      offersUrl.searchParams.set("search", keyword);
+      baseOffersUrl.searchParams.set("search", keyword);
       const categoryId = await this.findPublicSearchCategoryId(keyword);
-      if (categoryId) offersUrl.searchParams.set("category", categoryId);
+      if (categoryId) {
+        const categorizedUrl = new URL(baseOffersUrl);
+        categorizedUrl.searchParams.set("category", categoryId);
+        offersUrls.push(categorizedUrl);
+      }
     }
+    offersUrls.push(baseOffersUrl);
 
+    const candidates: OfferCandidate[] = [];
+    let lastPublicError: Error | undefined;
+
+    for (const offersUrl of offersUrls) {
     const response = await fetch(offersUrl, {
       headers: {
         accept: "text/html,application/xhtml+xml",
@@ -137,12 +144,12 @@ export class MercadoLivreConnector implements MarketplaceConnector {
     if (!response.ok) {
       const details = await readErrorDetails(response);
       const suffix = details ? ` Detalhe: ${details}` : "";
-      throw new Error(`Mercado Livre respondeu ${response.status} ao consultar a vitrine publica de ofertas.${suffix}`);
+      lastPublicError = new Error(`Mercado Livre respondeu ${response.status} ao consultar a vitrine publica de ofertas.${suffix}`);
+      continue;
     }
 
     const html = await response.text();
     const $ = cheerio.load(html);
-    const candidates: OfferCandidate[] = [];
 
     $(".poly-card").each((_index, element) => {
       const card = $(element);
@@ -191,8 +198,15 @@ export class MercadoLivreConnector implements MarketplaceConnector {
       };
       candidates.push({ ...candidate, score: calculateOfferScore(candidate) });
     });
+    }
 
-    return sortCandidates(applyOfferFilters(candidates, params), params.sortBy).slice(0, limit);
+    if (!candidates.length && lastPublicError) throw lastPublicError;
+
+    const strictMatches = sortCandidates(applyOfferFilters(candidates, params), params.sortBy);
+    if (strictMatches.length >= limit) return strictMatches.slice(0, limit);
+
+    const broadMatches = rankPublicCandidates(applyBasicOfferFilters(candidates, params), params);
+    return mergeCandidates(strictMatches, broadMatches).slice(0, limit);
   }
 
   async extractFromUrl(url: string): Promise<ProductExtractionResult> {
@@ -603,7 +617,8 @@ const publicOfferCategoryHints: Array<{ terms: string[]; categoryId: string }> =
   { terms: ["tv", "televisor", "smart tv"], categoryId: "MLB1002" },
   { terms: ["creatina", "whey", "suplemento", "suplementos"], categoryId: "MLB122102" },
   { terms: ["air fryer", "fritadeira eletrica", "fritadeira sem oleo"], categoryId: "MLB456045" },
-  { terms: ["camisa", "camiseta", "blusa"], categoryId: "MLB1430" }
+  { terms: ["camisa", "camiseta", "blusa"], categoryId: "MLB1430" },
+  { terms: ["geladeira", "refrigerador", "freezer"], categoryId: "MLB181294" }
 ];
 
 function getPublicOfferCategoryHint(value: string) {
@@ -655,10 +670,63 @@ function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersPar
   });
 }
 
+function applyBasicOfferFilters(candidates: OfferCandidate[], params: SearchOffersParams) {
+  return candidates.filter((candidate) => {
+    if (params.minPrice !== undefined && (candidate.currentPrice ?? 0) < params.minPrice) return false;
+    if (params.maxPrice !== undefined && (candidate.currentPrice ?? 0) > params.maxPrice) return false;
+    if (params.minDiscount !== undefined && (candidate.discountPercent ?? 0) < params.minDiscount) return false;
+    if (params.freeShipping !== undefined && Boolean(candidate.freeShipping) !== params.freeShipping) return false;
+    if (params.minRating !== undefined && (candidate.rating ?? 0) < params.minRating) return false;
+    if (params.hasCoupon !== undefined && Boolean(candidate.couponCode) !== params.hasCoupon) return false;
+    if (params.minCommission !== undefined && (candidate.commissionPercent ?? 0) < params.minCommission) return false;
+    return true;
+  });
+}
+
+function rankPublicCandidates(candidates: OfferCandidate[], params: SearchOffersParams) {
+  return [...candidates].sort((a, b) => {
+    const relevance = getPublicCandidateRelevance(b, params) - getPublicCandidateRelevance(a, params);
+    if (relevance !== 0) return relevance;
+    return (b.score ?? 0) - (a.score ?? 0);
+  });
+}
+
+function getPublicCandidateRelevance(candidate: OfferCandidate, params: SearchOffersParams) {
+  const haystack = getCandidateSearchText(candidate);
+  const keyword = normalizeSearchText(params.keyword ?? "");
+  const keywordWords = keyword
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 2 && !["oferta", "ofertas", "promocao", "promocoes"].includes(word));
+  const aliases = getKeywordAliases(params.keyword);
+
+  if (keyword && haystack.includes(keyword)) return 5;
+  if (aliases.length && aliases.some((word) => matchesKeywordWord(haystack, word))) return 4;
+  if (keywordWords.length && keywordWords.some((word) => matchesKeywordWord(haystack, word))) return 3;
+  if (params.category && matchesCategory(haystack, params.category)) return 2;
+  if (candidate.category) return 1;
+  return 0;
+}
+
+function mergeCandidates(primary: OfferCandidate[], fallback: OfferCandidate[]) {
+  const seen = new Set<string>();
+  const result: OfferCandidate[] = [];
+  for (const candidate of [...primary, ...fallback]) {
+    const key = candidate.externalId ?? candidate.productUrl;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(candidate);
+  }
+  return result;
+}
+
 function getKeywordAliases(keyword?: string) {
   const normalized = normalizeSearchText(keyword ?? "");
   if (["corrida", "correr", "run", "running"].some((term) => normalized.includes(term))) {
     return ["corrida", "tenis", "academia", "caminhada"];
+  }
+  if (["geladeira", "refrigerador", "freezer"].some((term) => normalized.includes(term))) {
+    return ["geladeira", "refrigerador", "freezer"];
   }
   return [];
 }
