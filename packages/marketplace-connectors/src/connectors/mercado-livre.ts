@@ -599,7 +599,7 @@ const categoryTerms: Record<string, string[]> = {
 };
 
 const publicOfferCategoryHints: Array<{ terms: string[]; categoryId: string }> = [
-  { terms: ["tenis", "sneaker", "calcado", "calcados", "sapato"], categoryId: "MLB23332" },
+  { terms: ["tenis", "sneaker", "calcado", "calcados", "sapato", "corrida", "caminhada", "academia"], categoryId: "MLB23332" },
   { terms: ["tv", "televisor", "smart tv"], categoryId: "MLB1002" },
   { terms: ["creatina", "whey", "suplemento", "suplementos"], categoryId: "MLB122102" },
   { terms: ["air fryer", "fritadeira eletrica", "fritadeira sem oleo"], categoryId: "MLB456045" },
@@ -634,11 +634,14 @@ function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersPar
     .split(/\s+/)
     .map((word) => word.trim())
     .filter((word) => word.length >= 2 && !["oferta", "ofertas", "promocao", "promocoes"].includes(word));
+  const keywordAliases = getKeywordAliases(params.keyword);
 
   return candidates.filter((candidate) => {
     const haystack = getCandidateSearchText(candidate);
     if (params.category && !matchesCategory(haystack, params.category)) return false;
-    if (keywordWords.length) {
+    if (keywordAliases.length) {
+      if (!keywordAliases.some((word) => matchesKeywordWord(haystack, word))) return false;
+    } else if (keywordWords.length) {
       if (!keywordWords.every((word) => matchesKeywordWord(haystack, word))) return false;
     }
     if (params.minPrice !== undefined && (candidate.currentPrice ?? 0) < params.minPrice) return false;
@@ -650,6 +653,14 @@ function applyOfferFilters(candidates: OfferCandidate[], params: SearchOffersPar
     if (params.minCommission !== undefined && (candidate.commissionPercent ?? 0) < params.minCommission) return false;
     return true;
   });
+}
+
+function getKeywordAliases(keyword?: string) {
+  const normalized = normalizeSearchText(keyword ?? "");
+  if (["corrida", "correr", "run", "running"].some((term) => normalized.includes(term))) {
+    return ["corrida", "tenis", "academia", "caminhada"];
+  }
+  return [];
 }
 
 function matchesKeywordWord(normalizedHaystack: string, word: string) {
