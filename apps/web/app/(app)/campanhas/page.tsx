@@ -33,6 +33,7 @@ interface Campaign {
   marketplaceId?: string | null;
   template?: { name: string } | null;
   templateId?: string | null;
+  config?: { instagramSurface?: string } | null;
   whatsappGroups?: Array<{ group: WhatsAppGroup }>;
   _count?: { scheduledPosts: number };
 }
@@ -59,6 +60,7 @@ export default function CampanhasPage() {
     intervalMinutes: 60,
     dailyLimit: 30,
     requireManualApproval: false,
+    instagramSurface: "FEED",
     whatsappGroupIds: [] as string[]
   });
   const [error, setError] = useState("");
@@ -87,11 +89,17 @@ export default function CampanhasPage() {
     setMessage("");
     try {
       const body = {
-        ...form,
         marketplaceId: form.marketplaceId || undefined,
+        name: form.name,
         templateId: form.templateId || undefined,
+        channel: form.channel,
         startTime: form.startTime || undefined,
         endTime: form.endTime || undefined,
+        intervalMinutes: form.intervalMinutes,
+        dailyLimit: form.dailyLimit,
+        requireManualApproval: form.requireManualApproval,
+        config: form.channel === "INSTAGRAM" ? { instagramSurface: form.instagramSurface } : undefined,
+        whatsappGroupIds: form.channel === "WHATSAPP" ? form.whatsappGroupIds : [],
         status: "PAUSED"
       };
       if (editingCampaignId) {
@@ -130,6 +138,7 @@ export default function CampanhasPage() {
       intervalMinutes: campaign.intervalMinutes,
       dailyLimit: campaign.dailyLimit,
       requireManualApproval: campaign.requireManualApproval,
+      instagramSurface: campaign.config?.instagramSurface === "STORY" ? "STORY" : "FEED",
       whatsappGroupIds: campaign.whatsappGroups?.map((item) => item.group.id) ?? []
     });
   }
@@ -146,6 +155,7 @@ export default function CampanhasPage() {
       intervalMinutes: 60,
       dailyLimit: 30,
       requireManualApproval: false,
+      instagramSurface: "FEED",
       whatsappGroupIds: []
     });
   }
@@ -271,6 +281,31 @@ export default function CampanhasPage() {
               />
               Aprovar antes de enviar
             </label>
+            {form.channel === "INSTAGRAM" ? (
+              <div className="space-y-2 border-t border-[var(--border)] pt-3">
+                <span className="block text-sm font-medium">Destino Instagram</span>
+                <div className="grid grid-cols-2 gap-1 rounded-md border border-[var(--border)] bg-mist p-1">
+                  <button
+                    className={`focus-ring rounded-md px-3 py-2 text-sm font-semibold ${
+                      form.instagramSurface === "FEED" ? "bg-white text-leaf shadow-soft" : "text-[var(--muted)] hover:bg-white"
+                    }`}
+                    onClick={() => setForm({ ...form, instagramSurface: "FEED" })}
+                    type="button"
+                  >
+                    Feed
+                  </button>
+                  <button
+                    className={`focus-ring rounded-md px-3 py-2 text-sm font-semibold ${
+                      form.instagramSurface === "STORY" ? "bg-white text-leaf shadow-soft" : "text-[var(--muted)] hover:bg-white"
+                    }`}
+                    onClick={() => setForm({ ...form, instagramSurface: "STORY" })}
+                    type="button"
+                  >
+                    Stories
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {form.channel === "WHATSAPP" ? (
               <div className="space-y-2 border-t border-[var(--border)] pt-3">
                 <div className="flex items-center justify-between gap-3">
@@ -332,6 +367,11 @@ export default function CampanhasPage() {
                   {campaign.channel === "WHATSAPP" && campaign.whatsappGroups?.length ? (
                     <p className="text-xs text-[var(--muted)]">
                       {campaign.whatsappGroups.map((item) => item.group.name).join(", ")}
+                    </p>
+                  ) : null}
+                  {campaign.channel === "INSTAGRAM" ? (
+                    <p className="text-xs text-[var(--muted)]">
+                      Destino: {campaign.config?.instagramSurface === "STORY" ? "Stories" : "Feed"}
                     </p>
                   ) : null}
                 </div>

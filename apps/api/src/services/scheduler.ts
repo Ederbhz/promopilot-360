@@ -1,6 +1,7 @@
 import { CampaignStatus, Channel, Prisma, ScheduledPostStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { jsonInput } from "../lib/sanitize.js";
+import { publishInstagramContent, type InstagramSurface } from "./instagram.js";
 import { sendTelegramMessage } from "./telegram.js";
 import { sendWhatsAppMessage, WhatsAppRateLimitError } from "./whatsapp.js";
 
@@ -131,6 +132,53 @@ export async function publishScheduledPost(id: string, options: { force?: boolea
   }
 
   if (post.channel !== Channel.TELEGRAM) {
+    if (post.channel === Channel.INSTAGRAM) {
+      try {
+        const providerResponse = await publishInstagramContent({
+          surface: getInstagramSurface(post.campaign?.config),
+          message: post.message,
+          imageUrl: post.offer.product.imageUrl,
+          affiliateUrl: post.offer.affiliateUrl
+        });
+
+        return prisma.scheduledPost.update({
+          where: { id },
+          data: {
+            status: ScheduledPostStatus.PUBLISHED,
+            publishedAt: new Date(),
+            offer: { update: { status: "PUBLISHED" } },
+            publishLogs: {
+              create: {
+                offerId: post.offerId,
+                channel: post.channel,
+                status: "SUCCESS",
+                providerResponse: jsonInput(providerResponse)
+              }
+            }
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Erro desconhecido.";
+        await prisma.publishLog.create({
+          data: {
+            scheduledPostId: post.id,
+            offerId: post.offerId,
+            channel: post.channel,
+            status: "ERROR",
+            errorMessage: message
+          }
+        });
+        return prisma.scheduledPost.update({
+          where: { id },
+          data: {
+            status: ScheduledPostStatus.FAILED,
+            errorMessage: message,
+            retryCount: { increment: 1 }
+          }
+        });
+      }
+    }
+
     return prisma.scheduledPost.update({
       where: { id },
       data: { status: ScheduledPostStatus.READY_TO_SEND }
@@ -180,6 +228,14 @@ export async function publishScheduledPost(id: string, options: { force?: boolea
       }
     });
   }
+}
+
+function getInstagramSurface(config: unknown): InstagramSurface {
+  if (config && typeof config === "object" && !Array.isArray(config)) {
+    const value = (config as Record<string, unknown>).instagramSurface;
+    if (value === "STORY") return "STORY";
+  }
+  return "FEED";
 }
 
 export async function processDueScheduledPosts() {

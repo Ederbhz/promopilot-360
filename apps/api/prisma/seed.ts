@@ -67,6 +67,23 @@ Link da oferta:
 {{link_afiliado}}
 
 Consulte disponibilidade antes de finalizar a compra.`
+  },
+  {
+    name: "Instagram Oferta",
+    channel: Channel.INSTAGRAM,
+    isDefault: true,
+    content: `Oferta encontrada: {{titulo}}
+
+{{preco_atual}}
+{{#if cupom}}Cupom: {{cupom}}{{/if}}
+{{#if desconto_percentual}}Desconto: {{desconto_percentual}}{{/if}}
+
+Link afiliado:
+{{link_afiliado}}
+
+Preco e disponibilidade podem mudar sem aviso.
+
+#oferta #promocao #achadinhos`
   }
 ];
 
