@@ -18,6 +18,11 @@ router.get(
       clicks,
       activeCampaigns,
       integrationErrors,
+      products,
+      categories,
+      activeMarketplaces,
+      generatedContents,
+      users,
       topOffers,
       marketplaces
     ] = await Promise.all([
@@ -27,12 +32,18 @@ router.get(
       prisma.clickEvent.count(),
       prisma.campaign.count({ where: { status: CampaignStatus.ACTIVE } }),
       prisma.integrationLog.count({ where: { status: { in: ["ERROR", "WARNING"] } } }),
+      prisma.product.count({ where: { deletedAt: null } }),
+      prisma.category.count({ where: { deletedAt: null } }),
+      prisma.marketplace.count({ where: { deletedAt: null, isActive: true } }),
+      prisma.generatedContent.count({ where: { deletedAt: null } }),
+      prisma.user.count({ where: { isActive: true } }),
       prisma.offer.findMany({
         include: { product: true, marketplace: true, _count: { select: { clickEvents: true, scheduledPosts: true } } },
         orderBy: [{ score: "desc" }, { createdAt: "desc" }],
         take: 10
       }),
       prisma.marketplace.findMany({
+        where: { deletedAt: null },
         include: { _count: { select: { offers: true, campaigns: true } } },
         orderBy: { name: "asc" }
       })
@@ -45,7 +56,12 @@ router.get(
         publishedPosts,
         clicks,
         activeCampaigns,
-        integrationErrors
+        integrationErrors,
+        products,
+        categories,
+        marketplaces: activeMarketplaces,
+        contents: generatedContents,
+        users
       },
       charts: {
         marketplaces: marketplaces.map((marketplace) => ({

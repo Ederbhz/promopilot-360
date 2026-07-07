@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@promopilot/shared": ["packages/shared/dist/index.js"],
+      "@promopilot/marketplace-connectors": ["packages/marketplace-connectors/dist/index.js"],
+      "@promopilot/message-templates": ["packages/message-templates/dist/index.js"]
+    }
+  }
+}

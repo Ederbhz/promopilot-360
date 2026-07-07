@@ -15,6 +15,7 @@ import {
 import { asyncHandler, HttpError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { jsonInput } from "../lib/sanitize.js";
+import { slugify } from "../lib/slug.js";
 import { connectors, getConnectorForMarketplace } from "../services/connectors.js";
 import { renderOfferMessage } from "../services/message-service.js";
 import { env } from "../config/env.js";
@@ -430,6 +431,8 @@ async function persistCandidate(candidate: OfferCandidate) {
   const estimatedCommission = normalizeNumber(candidate.estimatedCommission, 0, 9999999999.99);
   const commissionPercent = normalizeNumber(candidate.commissionPercent, 0, 999.99);
   const score = normalizeNumber(candidate.score ?? calculateOfferScore(candidate), 0, 999.99);
+  const categoryId = candidate.category ? (await ensureCategory(candidate.category)).id : undefined;
+  const brandId = candidate.brand ? (await ensureBrand(candidate.brand)).id : undefined;
   const existingProduct = await prisma.product.findFirst({
     where: {
       marketplaceId: marketplace.id,
@@ -444,7 +447,9 @@ async function persistCandidate(candidate: OfferCandidate) {
           description: candidate.description,
           imageUrl: candidate.imageUrl,
           brand: candidate.brand,
+          brandId,
           category: candidate.category,
+          categoryId,
           rating: productRating,
           reviewCount: productReviewCount,
           externalId: candidate.externalId
@@ -459,7 +464,9 @@ async function persistCandidate(candidate: OfferCandidate) {
           imageUrl: candidate.imageUrl,
           productUrl: candidate.productUrl,
           brand: candidate.brand,
+          brandId,
           category: candidate.category,
+          categoryId,
           rating: productRating,
           reviewCount: productReviewCount
         }
@@ -600,13 +607,33 @@ async function ensureMarketplace(key: MarketplaceKey) {
   const defaults = defaultMarketplaceNames[key];
   return prisma.marketplace.upsert({
     where: { key },
-    update: {},
+    update: { deletedAt: null, isActive: true },
     create: {
       key,
       name: defaults.name,
       integrationType: defaults.integrationType,
       baseUrl: defaults.baseUrl
     }
+  });
+}
+
+async function ensureCategory(name: string) {
+  const slug = slugify(name);
+  if (!slug) throw new HttpError(400, "Categoria invalida.");
+  return prisma.category.upsert({
+    where: { slug },
+    update: { name, isActive: true, deletedAt: null },
+    create: { name, slug }
+  });
+}
+
+async function ensureBrand(name: string) {
+  const slug = slugify(name);
+  if (!slug) throw new HttpError(400, "Marca invalida.");
+  return prisma.brand.upsert({
+    where: { slug },
+    update: { name, isActive: true, deletedAt: null },
+    create: { name, slug }
   });
 }
 

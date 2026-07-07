@@ -79,14 +79,16 @@ enum WhatsAppConnectionStatus {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  name         String   @db.VarChar(150)
-  email        String   @unique @db.VarChar(180)
-  passwordHash String
-  role         Role     @default(ADMIN)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String             @id @default(uuid())
+  name              String             @db.VarChar(150)
+  email             String             @unique @db.VarChar(180)
+  passwordHash      String
+  role              Role               @default(ADMIN)
+  isActive          Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  generatedContents GeneratedContent[]
+  auditLogs         AuditLog[]
 }
 
 model Marketplace {
@@ -98,6 +100,7 @@ model Marketplace {
   isActive         Boolean            @default(true)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
+  deletedAt        DateTime?
   affiliateAccounts AffiliateAccount[]
   products         Product[]
   offers           Offer[]
@@ -117,27 +120,67 @@ model AffiliateAccount {
   isActive             Boolean     @default(true)
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
+  deletedAt            DateTime?
 }
 
 model Product {
-  id            String      @id @default(uuid())
-  marketplaceId String
-  marketplace   Marketplace @relation(fields: [marketplaceId], references: [id])
-  externalId    String?     @db.VarChar(180)
-  title         String
-  description   String?
-  imageUrl      String?
-  productUrl    String
-  brand         String?     @db.VarChar(120)
-  category      String?     @db.VarChar(120)
-  rating        Decimal?    @db.Decimal(3, 2)
-  reviewCount   Int?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  offers        Offer[]
+  id                String             @id @default(uuid())
+  marketplaceId     String
+  marketplace       Marketplace        @relation(fields: [marketplaceId], references: [id])
+  categoryId        String?
+  categoryRef       Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brandId           String?
+  brandRef          Brand?             @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  externalId        String?            @db.VarChar(180)
+  title             String
+  description       String?
+  imageUrl          String?
+  productUrl        String
+  brand             String?            @db.VarChar(120)
+  category          String?            @db.VarChar(120)
+  rating            Decimal?           @db.Decimal(3, 2)
+  reviewCount       Int?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
+  offers            Offer[]
+  generatedContents GeneratedContent[]
 
   @@index([marketplaceId])
+  @@index([categoryId])
+  @@index([brandId])
   @@index([externalId])
+  @@index([deletedAt])
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @db.VarChar(120)
+  slug        String    @unique @db.VarChar(140)
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  products    Product[]
+
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+model Brand {
+  id          String    @id @default(uuid())
+  name        String    @db.VarChar(120)
+  slug        String    @unique @db.VarChar(140)
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  products    Product[]
+
+  @@index([isActive])
+  @@index([deletedAt])
 }
 
 model Offer {
@@ -166,9 +209,52 @@ model Offer {
   publishLogs         PublishLog[]
   shortLinks          ShortLink[]
   clickEvents         ClickEvent[]
+  generatedContents   GeneratedContent[]
 
   @@index([marketplaceId])
   @@index([status])
+  @@index([createdAt])
+}
+
+model GeneratedContent {
+  id          String    @id @default(uuid())
+  offerId     String?
+  offer       Offer?    @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  channel     Channel   @default(WHATSAPP)
+  title       String    @db.VarChar(180)
+  prompt      String?
+  content     String
+  tone        String?   @db.VarChar(80)
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([offerId])
+  @@index([productId])
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  entity    String   @db.VarChar(80)
+  entityId  String?
+  action    String   @db.VarChar(80)
+  before    Json?
+  after     Json?
+  metadata  Json?
+  ipHash    String?  @db.VarChar(120)
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
   @@index([createdAt])
 }
 

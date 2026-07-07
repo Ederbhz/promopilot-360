@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import {
   BarChart3,
+  Bot,
   CalendarClock,
   ClipboardList,
   Gauge,
@@ -11,9 +12,12 @@ import {
   LogOut,
   Megaphone,
   MessageCircle,
+  Package,
   Search,
   Settings,
-  TrendingUp
+  Tags,
+  TrendingUp,
+  Users
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -26,10 +30,14 @@ const navItems = [
   { href: "/garimpar", label: "Garimpar", icon: Search },
   { href: "/radar", label: "Radar", icon: TrendingUp },
   { href: "/links-manuais", label: "Links", icon: Link2 },
+  { href: "/produtos", label: "Produtos", icon: Package },
+  { href: "/categorias", label: "Categorias", icon: Tags },
+  { href: "/ia", label: "IA", icon: Bot },
   { href: "/campanhas", label: "Campanhas", icon: Megaphone },
   { href: "/agendador", label: "Agendador", icon: CalendarClock },
   { href: "/whatsapp", label: "WhatsApp", icon: MessageCircle },
   { href: "/templates", label: "Templates", icon: ClipboardList },
+  { href: "/usuarios", label: "Usuarios", icon: Users },
   { href: "/configuracoes", label: "Afiliado", icon: Settings },
   { href: "/relatorios", label: "Relatorios", icon: BarChart3 }
 ];

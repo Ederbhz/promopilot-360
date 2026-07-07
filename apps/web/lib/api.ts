@@ -86,6 +86,12 @@ export function patchJson<T>(path: string, body: unknown) {
   });
 }
 
+export function deleteJson<T>(path: string) {
+  return apiFetch<T>(path, {
+    method: "DELETE"
+  });
+}
+
 function readApiError(body: unknown) {
   if (body && typeof body === "object" && "error" in body && typeof body.error === "string") {
     return body.error;

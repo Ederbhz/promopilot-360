@@ -21,9 +21,16 @@ export function signToken(user: AuthUser) {
   return jwt.sign(user, env.JWT_SECRET, { expiresIn: "8h" });
 }
 
+export function readBearerToken(header: string | undefined) {
+  return header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
+}
+
+export function verifyToken(token: string) {
+  return jwt.verify(token, env.JWT_SECRET) as AuthUser;
+}
+
 export function requireAuth(req: Request, _res: Response, next: NextFunction) {
-  const header = req.headers.authorization;
-  const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
+  const token = readBearerToken(req.headers.authorization);
 
   if (!token) {
     next(new HttpError(401, "Autenticacao obrigatoria."));
@@ -31,7 +38,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   }
 
   try {
-    req.user = jwt.verify(token, env.JWT_SECRET) as AuthUser;
+    req.user = verifyToken(token);
     next();
   } catch {
     next(new HttpError(401, "Sessao expirada ou invalida."));

@@ -112,6 +112,26 @@ async function main() {
     });
   }
 
+  const categories = [
+    "Fitness",
+    "Alimentos",
+    "Suplementos",
+    "Beleza",
+    "Moda",
+    "Casa e jardim",
+    "Eletronicos",
+    "Infantil",
+    "Pets"
+  ];
+
+  for (const name of categories) {
+    await prisma.category.upsert({
+      where: { slug: slug(name) },
+      update: { name, isActive: true, deletedAt: null },
+      create: { name, slug: slug(name) }
+    });
+  }
+
   for (const template of defaultMessageTemplates) {
     await prisma.messageTemplate.upsert({
       where: { id: `${template.channel.toLowerCase()}-${slug(template.name)}` },

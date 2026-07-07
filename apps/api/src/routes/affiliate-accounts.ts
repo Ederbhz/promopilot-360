@@ -42,6 +42,7 @@ router.get(
   "/",
   asyncHandler(async (_req, res) => {
     const accounts = await prisma.affiliateAccount.findMany({
+      where: { deletedAt: null },
       include: { marketplace: true },
       orderBy: { createdAt: "desc" }
     });
@@ -119,8 +120,8 @@ router.post(
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    const account = await prisma.affiliateAccount.findUnique({
-      where: { id: req.params.id },
+    const account = await prisma.affiliateAccount.findFirst({
+      where: { id: req.params.id, deletedAt: null },
       include: { marketplace: true }
     });
     if (!account) throw new HttpError(404, "Conta de afiliado nao encontrada.");
@@ -132,8 +133,10 @@ router.put(
   "/:id",
   asyncHandler(async (req, res) => {
     const data = accountSchema.partial().parse(req.body);
+    const before = await prisma.affiliateAccount.findFirst({ where: { id: req.params.id, deletedAt: null } });
+    if (!before) throw new HttpError(404, "Conta de afiliado nao encontrada.");
     const account = await prisma.affiliateAccount.update({
-      where: { id: req.params.id },
+      where: { id: before.id },
       data: {
         marketplaceId: data.marketplaceId,
         name: data.name,
@@ -152,8 +155,8 @@ router.put(
 router.post(
   "/:id/test",
   asyncHandler(async (req, res) => {
-    const account = await prisma.affiliateAccount.findUnique({
-      where: { id: req.params.id },
+    const account = await prisma.affiliateAccount.findFirst({
+      where: { id: req.params.id, deletedAt: null },
       include: { marketplace: true }
     });
     if (!account) throw new HttpError(404, "Conta de afiliado nao encontrada.");
@@ -168,6 +171,19 @@ router.post(
       }
     });
     res.json(health);
+  })
+);
+
+router.delete(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const account = await prisma.affiliateAccount.findFirst({ where: { id: req.params.id, deletedAt: null } });
+    if (!account) throw new HttpError(404, "Conta de afiliado nao encontrada.");
+    await prisma.affiliateAccount.update({
+      where: { id: account.id },
+      data: { deletedAt: new Date(), isActive: false }
+    });
+    res.status(204).end();
   })
 );
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CalendarClock, MousePointerClick, Send, ShoppingBag, Target } from "lucide-react";
+import { AlertTriangle, CalendarClock, FileText, MousePointerClick, Package, Send, ShoppingBag, Store, Tags, Target, Users } from "lucide-react";
 import { LoadingLine, ErrorLine } from "@/components/AsyncState";
 import { MetricCard } from "@/components/MetricCard";
 import { PageHeader } from "@/components/PageHeader";
@@ -17,6 +17,11 @@ interface DashboardData {
     clicks: number;
     activeCampaigns: number;
     integrationErrors: number;
+    products: number;
+    categories: number;
+    marketplaces: number;
+    contents: number;
+    users: number;
   };
   charts: {
     marketplaces: Array<{ id: string; name: string; offers: number; campaigns: number }>;
@@ -56,6 +61,11 @@ export default function DashboardPage() {
         <MetricCard label="Cliques totais" value={data.cards.clicks} icon={MousePointerClick} tone="leaf" />
         <MetricCard label="Campanhas ativas" value={data.cards.activeCampaigns} icon={Target} tone="saffron" />
         <MetricCard label="Alertas" value={data.cards.integrationErrors} icon={AlertTriangle} tone="coral" />
+        <MetricCard label="Produtos" value={data.cards.products} icon={Package} tone="ink" />
+        <MetricCard label="Categorias" value={data.cards.categories} icon={Tags} tone="leaf" />
+        <MetricCard label="Marketplaces" value={data.cards.marketplaces} icon={Store} tone="saffron" />
+        <MetricCard label="Conteudos" value={data.cards.contents} icon={FileText} tone="ink" />
+        <MetricCard label="Usuarios" value={data.cards.users} icon={Users} tone="leaf" />
       </div>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">

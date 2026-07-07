@@ -19,6 +19,7 @@ router.get(
   "/",
   asyncHandler(async (_req, res) => {
     const marketplaces = await prisma.marketplace.findMany({
+      where: { deletedAt: null },
       orderBy: { name: "asc" },
       include: { _count: { select: { offers: true, affiliateAccounts: true } } }
     });
@@ -45,8 +46,8 @@ router.post(
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
-    const marketplace = await prisma.marketplace.findUnique({
-      where: { id: req.params.id },
+    const marketplace = await prisma.marketplace.findFirst({
+      where: { id: req.params.id, deletedAt: null },
       include: { affiliateAccounts: true }
     });
     if (!marketplace) throw new HttpError(404, "Marketplace nao encontrado.");
@@ -58,7 +59,9 @@ router.put(
   "/:id",
   asyncHandler(async (req, res) => {
     const data = marketplaceSchema.partial().parse(req.body);
-    const marketplace = await prisma.marketplace.update({ where: { id: req.params.id }, data });
+    const before = await prisma.marketplace.findFirst({ where: { id: req.params.id, deletedAt: null } });
+    if (!before) throw new HttpError(404, "Marketplace nao encontrado.");
+    const marketplace = await prisma.marketplace.update({ where: { id: before.id }, data });
     res.json(marketplace);
   })
 );
@@ -67,7 +70,9 @@ router.patch(
   "/:id/status",
   asyncHandler(async (req, res) => {
     const data = z.object({ isActive: z.boolean() }).parse(req.body);
-    const marketplace = await prisma.marketplace.update({ where: { id: req.params.id }, data });
+    const before = await prisma.marketplace.findFirst({ where: { id: req.params.id, deletedAt: null } });
+    if (!before) throw new HttpError(404, "Marketplace nao encontrado.");
+    const marketplace = await prisma.marketplace.update({ where: { id: before.id }, data });
     res.json(marketplace);
   })
 );
@@ -75,7 +80,9 @@ router.patch(
 router.delete(
   "/:id",
   asyncHandler(async (req, res) => {
-    await prisma.marketplace.delete({ where: { id: req.params.id } });
+    const before = await prisma.marketplace.findFirst({ where: { id: req.params.id, deletedAt: null } });
+    if (!before) throw new HttpError(404, "Marketplace nao encontrado.");
+    await prisma.marketplace.update({ where: { id: before.id }, data: { deletedAt: new Date(), isActive: false } });
     res.status(204).end();
   })
 );
