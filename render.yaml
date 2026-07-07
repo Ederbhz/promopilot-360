@@ -93,6 +93,8 @@ services:
         sync: false
       - key: SHOPEE_API_BASE_URL
         sync: false
+      - key: SHOPEE_SUB_IDS
+        sync: false
       - key: MELI_CLIENT_ID
         sync: false
       - key: MELI_CLIENT_SECRET

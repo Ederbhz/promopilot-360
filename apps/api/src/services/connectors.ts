@@ -13,6 +13,7 @@ const baseConnectorEnv: ConnectorEnv = {
   SHOPEE_APP_SECRET: env.SHOPEE_APP_SECRET,
   SHOPEE_AFFILIATE_ID: env.SHOPEE_AFFILIATE_ID,
   SHOPEE_API_BASE_URL: env.SHOPEE_API_BASE_URL,
+  SHOPEE_SUB_IDS: env.SHOPEE_SUB_IDS,
   MELI_CLIENT_ID: env.MELI_CLIENT_ID,
   MELI_CLIENT_SECRET: env.MELI_CLIENT_SECRET,
   MELI_ACCESS_TOKEN: env.MELI_ACCESS_TOKEN,
@@ -98,7 +99,10 @@ function accountToConnectorEnv(account: {
           pick(config, "affiliateId", "publisherId", "tag", "SHOPEE_AFFILIATE_ID"),
         SHOPEE_API_BASE_URL:
           pick(credentials, "apiBaseUrl", "baseUrl", "SHOPEE_API_BASE_URL") ??
-          pick(config, "apiBaseUrl", "baseUrl", "SHOPEE_API_BASE_URL")
+          pick(config, "apiBaseUrl", "baseUrl", "SHOPEE_API_BASE_URL"),
+        SHOPEE_SUB_IDS:
+          pick(credentials, "subIds", "sub_ids", "SHOPEE_SUB_IDS") ??
+          pick(config, "subIds", "sub_ids", "SHOPEE_SUB_IDS")
       });
     case "MERCADO_LIVRE":
       return compactEnv({

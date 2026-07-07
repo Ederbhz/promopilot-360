@@ -56,7 +56,8 @@ const programFields: Record<string, QuickField[]> = {
     { key: "appId", label: "App ID", target: "accountIdentifier" },
     { key: "appSecret", label: "App Secret", target: "credentials", secret: true },
     { key: "affiliateId", label: "Affiliate ID", target: "affiliateTag" },
-    { key: "apiBaseUrl", label: "URL da API", placeholder: "Opcional", target: "config" }
+    { key: "apiBaseUrl", label: "URL da API", placeholder: "Opcional", target: "config" },
+    { key: "subIds", label: "SubIds", placeholder: "instagram,stories,promo", target: "config" }
   ],
   MERCADO_LIVRE: [
     { key: "clientId", label: "App ID", target: "accountIdentifier" },
@@ -157,7 +158,7 @@ export default function ConfiguracoesPage() {
     setEditingAccountId(account.id);
     setError("");
     setMessage("");
-    setQuickFields(account.marketplace.key === "MERCADO_LIVRE" ? { redirectUri: getDefaultRedirectUri() } : {});
+    setQuickFields(getInitialQuickFields(account.marketplace.key));
     setForm({
       marketplaceId: account.marketplace.id,
       name: account.name,
@@ -314,7 +315,7 @@ export default function ConfiguracoesPage() {
                 value={form.marketplaceId}
                 onChange={(event) => {
                   const marketplace = marketplaces.find((item) => item.id === event.target.value);
-                  setQuickFields(marketplace?.key === "MERCADO_LIVRE" ? { redirectUri: getDefaultRedirectUri() } : {});
+                  setQuickFields(getInitialQuickFields(marketplace?.key));
                   setForm({
                     ...form,
                     marketplaceId: event.target.value,
@@ -388,6 +389,20 @@ export default function ConfiguracoesPage() {
                 >
                   <RefreshCw size={16} aria-hidden />
                   Atualizar token
+                </button>
+              </div>
+            ) : null}
+            {selectedMarketplace?.key === "SHOPEE" ? (
+              <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-3">
+                <button
+                  className="focus-ring flex items-center justify-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-mist"
+                  onClick={() =>
+                    window.open("https://affiliate.shopee.com.br/open_api/home", "_blank", "noopener,noreferrer")
+                  }
+                  type="button"
+                >
+                  <ExternalLink size={16} aria-hidden />
+                  Abrir Open API Shopee
                 </button>
               </div>
             ) : null}
@@ -491,6 +506,12 @@ function parseJson(value: string) {
 function getDefaultRedirectUri() {
   if (typeof window === "undefined") return "";
   return window.location.href.split(/[?#]/)[0] ?? "";
+}
+
+function getInitialQuickFields(marketplaceKey?: string): Record<string, string> {
+  if (marketplaceKey === "MERCADO_LIVRE") return { redirectUri: getDefaultRedirectUri() };
+  if (marketplaceKey === "SHOPEE") return { apiBaseUrl: "https://open-api.affiliate.shopee.com.br/graphql" };
+  return {};
 }
 
 function buildProgramPayload(input: {

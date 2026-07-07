@@ -23,6 +23,7 @@ const envSchema = z.object({
   SHOPEE_APP_SECRET: z.string().optional(),
   SHOPEE_AFFILIATE_ID: z.string().optional(),
   SHOPEE_API_BASE_URL: z.string().optional(),
+  SHOPEE_SUB_IDS: z.string().optional(),
   MELI_CLIENT_ID: z.string().optional(),
   MELI_CLIENT_SECRET: z.string().optional(),
   MELI_REDIRECT_URI: z.string().optional(),

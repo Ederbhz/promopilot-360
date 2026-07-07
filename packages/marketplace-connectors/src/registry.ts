@@ -13,6 +13,7 @@ export interface ConnectorEnv {
   SHOPEE_APP_SECRET?: string;
   SHOPEE_AFFILIATE_ID?: string;
   SHOPEE_API_BASE_URL?: string;
+  SHOPEE_SUB_IDS?: string;
   MELI_CLIENT_ID?: string;
   MELI_CLIENT_SECRET?: string;
   MELI_ACCESS_TOKEN?: string;
