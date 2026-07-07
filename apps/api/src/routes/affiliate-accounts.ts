@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { encryptJson } from "../lib/crypto.js";
+import { decryptJson, encryptJson } from "../lib/crypto.js";
 import { asyncHandler, HttpError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { jsonInput, sanitizeAffiliateAccount } from "../lib/sanitize.js";
@@ -135,6 +135,10 @@ router.put(
     const data = accountSchema.partial().parse(req.body);
     const before = await prisma.affiliateAccount.findFirst({ where: { id: req.params.id, deletedAt: null } });
     if (!before) throw new HttpError(404, "Conta de afiliado nao encontrada.");
+    const mergedCredentials = data.credentials
+      ? { ...toRecord(decryptJson<Record<string, unknown>>(before.encryptedCredentials)), ...data.credentials }
+      : undefined;
+    const mergedConfig = data.config ? { ...toRecord(before.config), ...data.config } : undefined;
     const account = await prisma.affiliateAccount.update({
       where: { id: before.id },
       data: {
@@ -142,8 +146,8 @@ router.put(
         name: data.name,
         accountIdentifier: data.accountIdentifier,
         affiliateTag: data.affiliateTag,
-        encryptedCredentials: data.credentials ? jsonInput(encryptJson(data.credentials)) : undefined,
-        config: jsonInput(data.config),
+        encryptedCredentials: mergedCredentials ? jsonInput(encryptJson(mergedCredentials)) : undefined,
+        config: jsonInput(mergedConfig),
         isActive: data.isActive
       },
       include: { marketplace: true }
@@ -255,4 +259,8 @@ function stringValue(value: unknown) {
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
