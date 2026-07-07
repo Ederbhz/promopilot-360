@@ -4,8 +4,10 @@ import clsx from "clsx";
 import {
   BarChart3,
   Bot,
+  Brain,
   CalendarClock,
   ClipboardList,
+  FileSearch,
   Gauge,
   Instagram,
   LayoutDashboard,
@@ -17,6 +19,7 @@ import {
   Search,
   Settings,
   Tags,
+  TicketPercent,
   TrendingUp,
   Users
 } from "lucide-react";
@@ -30,9 +33,12 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/garimpar", label: "Garimpar", icon: Search },
   { href: "/radar", label: "Radar", icon: TrendingUp },
+  { href: "/inteligencia", label: "Inteligencia", icon: Brain },
   { href: "/links-manuais", label: "Links", icon: Link2 },
   { href: "/produtos", label: "Produtos", icon: Package },
   { href: "/categorias", label: "Categorias", icon: Tags },
+  { href: "/cupons", label: "Cupons", icon: TicketPercent },
+  { href: "/seo", label: "SEO", icon: FileSearch },
   { href: "/ia", label: "IA", icon: Bot },
   { href: "/campanhas", label: "Campanhas", icon: Megaphone },
   { href: "/agendador", label: "Agendador", icon: CalendarClock },

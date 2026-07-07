@@ -106,6 +106,9 @@ model Marketplace {
   offers           Offer[]
   campaigns        Campaign[]
   integrationLogs  IntegrationLog[]
+  priceHistory     PriceHistory[]
+  coupons          Coupon[]
+  seoPages         SeoPage[]
 }
 
 model AffiliateAccount {
@@ -145,6 +148,11 @@ model Product {
   deletedAt         DateTime?
   offers            Offer[]
   generatedContents GeneratedContent[]
+  priceHistory      PriceHistory[]
+  offerScores       OfferScore[]
+  couponProducts    CouponProduct[]
+  seoPages          SeoPage[]
+  opportunities     ProductOpportunity[]
 
   @@index([marketplaceId])
   @@index([categoryId])
@@ -163,6 +171,8 @@ model Category {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
   products    Product[]
+  couponCategories CouponCategory[]
+  seoPages    SeoPage[]
 
   @@index([isActive])
   @@index([deletedAt])
@@ -453,4 +463,173 @@ model IntegrationLog {
   responsePayload Json?
   errorMessage    String?
   createdAt       DateTime     @default(now())
+}
+
+model PriceHistory {
+  id                          String       @id @default(uuid())
+  productId                   String       @map("product_id")
+  product                     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketplaceId               String?      @map("marketplace_id")
+  marketplace                 Marketplace? @relation(fields: [marketplaceId], references: [id], onDelete: SetNull)
+  preco                       Decimal      @db.Decimal(12, 2)
+  precoAnterior               Decimal?     @map("preco_anterior") @db.Decimal(12, 2)
+  menorPreco30d               Decimal?     @map("menor_preco_30d") @db.Decimal(12, 2)
+  mediaPreco30d               Decimal?     @map("media_preco_30d") @db.Decimal(12, 2)
+  maiorPreco90d               Decimal?     @map("maior_preco_90d") @db.Decimal(12, 2)
+  percentualDescontoInformado Decimal?     @map("percentual_desconto_informado") @db.Decimal(5, 2)
+  percentualDescontoReal      Decimal?     @map("percentual_desconto_real") @db.Decimal(5, 2)
+  statusDesconto              String?      @map("status_desconto") @db.VarChar(50)
+  origem                      String?      @db.VarChar(120)
+  dataColeta                  DateTime     @default(now()) @map("data_coleta")
+  createdAt                   DateTime     @default(now()) @map("created_at")
+
+  @@index([productId], map: "idx_price_history_product")
+  @@index([dataColeta], map: "idx_price_history_data")
+  @@index([marketplaceId], map: "idx_price_history_marketplace")
+  @@map("price_history")
+}
+
+model OfferScore {
+  id             String       @id @default(uuid())
+  productId      String       @map("product_id")
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  scoreTotal     Decimal      @map("score_total") @db.Decimal(5, 2)
+  scorePreco     Decimal?     @map("score_preco") @db.Decimal(5, 2)
+  scoreDesconto  Decimal?     @map("score_desconto") @db.Decimal(5, 2)
+  scoreAvaliacao Decimal?     @map("score_avaliacao") @db.Decimal(5, 2)
+  scoreVendas    Decimal?     @map("score_vendas") @db.Decimal(5, 2)
+  scoreComissao  Decimal?     @map("score_comissao") @db.Decimal(5, 2)
+  scoreCupom     Decimal?     @map("score_cupom") @db.Decimal(5, 2)
+  scoreFrete     Decimal?     @map("score_frete") @db.Decimal(5, 2)
+  scoreReputacao Decimal?     @map("score_reputacao") @db.Decimal(5, 2)
+  scoreSeo       Decimal?     @map("score_seo") @db.Decimal(5, 2)
+  classificacao  String?      @db.VarChar(80)
+  justificativa  String?
+  recomendado    Boolean      @default(false)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  opportunities  ProductOpportunity[]
+
+  @@index([productId], map: "idx_offer_scores_product")
+  @@index([scoreTotal(sort: Desc)], map: "idx_offer_scores_total")
+  @@index([recomendado], map: "idx_offer_scores_recomendado")
+  @@map("offer_scores")
+}
+
+model Coupon {
+  id                 String           @id @default(uuid())
+  marketplaceId      String           @map("marketplace_id")
+  marketplace        Marketplace      @relation(fields: [marketplaceId], references: [id], onDelete: Cascade)
+  codigo             String           @db.VarChar(100)
+  titulo             String?          @db.VarChar(180)
+  descricao          String?
+  percentualDesconto Decimal?         @map("percentual_desconto") @db.Decimal(5, 2)
+  valorDesconto      Decimal?         @map("valor_desconto") @db.Decimal(12, 2)
+  valorMinimo        Decimal?         @map("valor_minimo") @db.Decimal(12, 2)
+  dataInicio         DateTime?        @map("data_inicio")
+  dataFim            DateTime?        @map("data_fim")
+  status             Boolean          @default(true)
+  origem             String?          @db.VarChar(120)
+  urlOrigem          String?          @map("url_origem")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+  deletedAt          DateTime?        @map("deleted_at")
+  products           CouponProduct[]
+  categories         CouponCategory[]
+
+  @@unique([marketplaceId, codigo], map: "coupons_marketplace_codigo_key")
+  @@index([marketplaceId], map: "idx_coupons_marketplace")
+  @@index([codigo], map: "idx_coupons_codigo")
+  @@index([dataInicio, dataFim], map: "idx_coupons_validade")
+  @@map("coupons")
+}
+
+model CouponProduct {
+  id        String   @id @default(uuid())
+  couponId  String   @map("coupon_id")
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([couponId, productId], map: "coupon_products_coupon_product_key")
+  @@index([productId], map: "idx_coupon_products_product")
+  @@map("coupon_products")
+}
+
+model CouponCategory {
+  id         String   @id @default(uuid())
+  couponId   String   @map("coupon_id")
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  categoryId String   @map("category_id")
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([couponId, categoryId], map: "coupon_categories_coupon_category_key")
+  @@index([categoryId], map: "idx_coupon_categories_category")
+  @@map("coupon_categories")
+}
+
+model SeoPage {
+  id                         String       @id @default(uuid())
+  productId                  String?      @map("product_id")
+  product                    Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  categoryId                 String?      @map("category_id")
+  category                   Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  marketplaceId              String?      @map("marketplace_id")
+  marketplace                Marketplace? @relation(fields: [marketplaceId], references: [id], onDelete: SetNull)
+  tipo                       String       @db.VarChar(80)
+  slug                       String       @unique
+  tituloSeo                  String       @map("titulo_seo")
+  metaDescription            String?      @map("meta_description")
+  h1                         String?
+  conteudo                   String?
+  faq                        Json?
+  schemaJson                 Json?        @map("schema_json")
+  palavraChavePrincipal      String?      @map("palavra_chave_principal")
+  palavrasChaveSecundarias   String[]     @default([]) @map("palavras_chave_secundarias")
+  status                     String       @default("rascunho") @db.VarChar(50)
+  publishedAt                DateTime?    @map("published_at")
+  createdAt                  DateTime     @default(now()) @map("created_at")
+  updatedAt                  DateTime     @updatedAt @map("updated_at")
+  deletedAt                  DateTime?    @map("deleted_at")
+
+  @@index([slug], map: "idx_seo_pages_slug")
+  @@index([status], map: "idx_seo_pages_status")
+  @@index([tipo], map: "idx_seo_pages_tipo")
+  @@map("seo_pages")
+}
+
+model SeoKeyword {
+  id           String   @id @default(uuid())
+  termo        String
+  volumeBusca  Int?     @map("volume_busca")
+  dificuldade  Decimal? @db.Decimal(5, 2)
+  intencao     String?  @db.VarChar(80)
+  categoria    String?  @db.VarChar(120)
+  origem       String?  @db.VarChar(120)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([termo], map: "idx_seo_keywords_termo")
+  @@index([intencao], map: "idx_seo_keywords_intencao")
+  @@map("seo_keywords")
+}
+
+model ProductOpportunity {
+  id          String      @id @default(uuid())
+  productId   String      @map("product_id")
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  scoreId     String?     @map("score_id")
+  score       OfferScore? @relation(fields: [scoreId], references: [id], onDelete: SetNull)
+  tipo        String?     @db.VarChar(80)
+  titulo      String?
+  descricao   String?
+  prioridade  String?     @db.VarChar(40)
+  status      String      @default("aberta") @db.VarChar(40)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  @@index([productId], map: "idx_product_opportunities_product")
+  @@index([scoreId], map: "idx_product_opportunities_score")
+  @@index([status], map: "idx_product_opportunities_status")
+  @@map("product_opportunities")
 }

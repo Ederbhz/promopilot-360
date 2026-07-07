@@ -155,6 +155,15 @@ pnpm db:seed          # seed de admin, marketplaces e templates
 - Historico de publicacoes, logs, links curtos e cliques.
 - Dashboard e relatorios.
 
+## V2 Inteligencia
+
+- Historico de precos em `price_history`, sem duplicar preco igual.
+- Calculo de desconto real, status de falsa promocao e score de oferta.
+- Ranking de oportunidades em `/inteligencia`.
+- Banco de cupons em `/cupons`, com auditoria e validade.
+- SEO programatico em `/seo`, com rascunho, edicao e publicacao.
+- Jobs BullMQ/fallback para analise de preco, score, cupons e rascunhos SEO.
+
 ## Seguranca
 
 - Nao coloque senhas ou tokens reais no codigo.

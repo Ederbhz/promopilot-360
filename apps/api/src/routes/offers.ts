@@ -19,6 +19,7 @@ import { slugify } from "../lib/slug.js";
 import { connectors, getConnectorForMarketplace } from "../services/connectors.js";
 import { renderOfferMessage } from "../services/message-service.js";
 import { env } from "../config/env.js";
+import { analyzeOfferIntelligence, calculateOfferScoreForOffer, getOfferRanking } from "../services/intelligence.js";
 
 const router = Router();
 
@@ -255,6 +256,23 @@ router.post(
 );
 
 router.get(
+  "/ranking",
+  asyncHandler(async (req, res) => {
+    const query = z
+      .object({
+        marketplaceId: z.string().uuid().optional(),
+        categoryId: z.string().uuid().optional(),
+        scoreMinimo: z.coerce.number().min(0).max(100).optional(),
+        cupomAtivo: z.coerce.boolean().optional(),
+        freteGratis: z.coerce.boolean().optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional()
+      })
+      .parse(req.query);
+    res.json(await getOfferRanking(query));
+  })
+);
+
+router.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const offer = await prisma.offer.findUnique({
@@ -303,7 +321,14 @@ router.put(
       },
       include: { product: true, marketplace: true }
     });
-    res.json(offer);
+    await analyzeOfferIntelligence(offer.id, "manual_update").catch((error) =>
+      console.warn("Falha ao analisar oferta atualizada:", error)
+    );
+    const refreshed = await prisma.offer.findUnique({
+      where: { id: offer.id },
+      include: { product: true, marketplace: true }
+    });
+    res.json(refreshed ?? offer);
   })
 );
 
@@ -388,6 +413,24 @@ router.post(
       data.templateId
     );
     res.json({ message: rendered.message, template: rendered.template });
+  })
+);
+
+router.post(
+  "/:id/calculate-score",
+  asyncHandler(async (req, res) => {
+    const score = await calculateOfferScoreForOffer(req.params.id!);
+    if (!score) throw new HttpError(404, "Oferta nao encontrada.");
+    res.json(score);
+  })
+);
+
+router.post(
+  "/:id/analyze-intelligence",
+  asyncHandler(async (req, res) => {
+    const offer = await prisma.offer.findUnique({ where: { id: req.params.id } });
+    if (!offer) throw new HttpError(404, "Oferta nao encontrada.");
+    res.json(await analyzeOfferIntelligence(offer.id, "manual"));
   })
 );
 
@@ -499,14 +542,23 @@ async function persistCandidate(candidate: OfferCandidate) {
     : null;
 
   if (existingPendingOffer) {
-    return prisma.offer.update({
+    const updated = await prisma.offer.update({
       where: { id: existingPendingOffer.id },
       data: offerData,
       include: { product: true, marketplace: true }
     });
+    await analyzeOfferIntelligence(updated.id, "collector").catch((error) =>
+      console.warn("Falha ao analisar oferta atualizada:", error)
+    );
+    return (
+      (await prisma.offer.findUnique({
+        where: { id: updated.id },
+        include: { product: true, marketplace: true }
+      })) ?? updated
+    );
   }
 
-  return prisma.offer.create({
+  const created = await prisma.offer.create({
     data: {
       productId: product.id,
       marketplaceId: marketplace.id,
@@ -514,6 +566,15 @@ async function persistCandidate(candidate: OfferCandidate) {
     },
     include: { product: true, marketplace: true }
   });
+  await analyzeOfferIntelligence(created.id, "collector").catch((error) =>
+    console.warn("Falha ao analisar oferta criada:", error)
+  );
+  return (
+    (await prisma.offer.findUnique({
+      where: { id: created.id },
+      include: { product: true, marketplace: true }
+    })) ?? created
+  );
 }
 
 async function hasGeneratedOfferForCandidate(candidate: OfferCandidate) {

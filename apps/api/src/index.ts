@@ -8,6 +8,7 @@ import { HttpError } from "./lib/http.js";
 import { prisma } from "./lib/prisma.js";
 import apiRoutes from "./routes/index.js";
 import shortLinkRoutes from "./routes/short-links.js";
+import { runIntelligenceJobs } from "./services/intelligence.js";
 import { processDueScheduledPosts } from "./services/scheduler.js";
 import { startBullMqScheduler } from "./workers/queues.js";
 
@@ -54,6 +55,7 @@ const server = app.listen(env.PORT, () => {
 });
 
 let fallbackInterval: NodeJS.Timeout | null = null;
+let intelligenceFallbackInterval: NodeJS.Timeout | null = null;
 let bullMqRuntime: Awaited<ReturnType<typeof startBullMqScheduler>> | null = null;
 
 if (env.DISABLE_WORKERS !== "true") {
@@ -69,6 +71,11 @@ if (env.DISABLE_WORKERS !== "true") {
           console.warn("Falha ao processar publicacoes agendadas:", err);
         });
       }, 60_000);
+      intelligenceFallbackInterval = setInterval(() => {
+        runIntelligenceJobs(100).catch((err) => {
+          console.warn("Falha ao processar jobs de inteligencia:", err);
+        });
+      }, 6 * 60 * 60_000);
     });
 }
 
@@ -77,6 +84,7 @@ process.on("SIGTERM", shutdown);
 
 async function shutdown() {
   if (fallbackInterval) clearInterval(fallbackInterval);
+  if (intelligenceFallbackInterval) clearInterval(intelligenceFallbackInterval);
   if (bullMqRuntime) await bullMqRuntime.close();
   server.close();
   await prisma.$disconnect();
