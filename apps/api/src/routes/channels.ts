@@ -4,6 +4,7 @@ import { Channel } from "@prisma/client";
 import { asyncHandler, HttpError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { jsonInput } from "../lib/sanitize.js";
+import { publishFacebookPageContent, testFacebookConnection } from "../services/facebook.js";
 import { renderOfferMessage } from "../services/message-service.js";
 import { publishInstagramContent, testInstagramConnection } from "../services/instagram.js";
 import { sendTelegramMessage, testTelegramConnection } from "../services/telegram.js";
@@ -73,6 +74,54 @@ router.post(
       data: {
         offerId: offer.id,
         channel: Channel.INSTAGRAM,
+        status: "SUCCESS",
+        providerResponse: jsonInput(providerResponse)
+      }
+    });
+    await prisma.offer.update({ where: { id: offer.id }, data: { status: "PUBLISHED" } });
+
+    res.json(providerResponse);
+  })
+);
+
+router.post(
+  "/facebook/test",
+  asyncHandler(async (_req, res) => {
+    res.json(await testFacebookConnection());
+  })
+);
+
+router.post(
+  "/facebook/publish",
+  asyncHandler(async (req, res) => {
+    const data = z
+      .object({
+        offerId: z.string().uuid(),
+        message: z.string().optional(),
+        imageUrl: z.string().url().optional()
+      })
+      .parse(req.body ?? {});
+
+    const offer = await prisma.offer.findUnique({
+      where: { id: data.offerId },
+      include: { product: true, marketplace: true }
+    });
+    if (!offer) throw new HttpError(404, "Oferta nao encontrada.");
+    if (!offer.affiliateUrl) throw new HttpError(400, "Gere o link afiliado antes de publicar no Facebook.");
+
+    const rendered = data.message
+      ? { message: data.message }
+      : await renderOfferMessage(offer.id, Channel.FACEBOOK);
+    const providerResponse = await publishFacebookPageContent({
+      message: rendered.message,
+      imageUrl: data.imageUrl ?? offer.product.imageUrl,
+      linkUrl: offer.affiliateUrl
+    });
+
+    await prisma.publishLog.create({
+      data: {
+        offerId: offer.id,
+        channel: Channel.FACEBOOK,
         status: "SUCCESS",
         providerResponse: jsonInput(providerResponse)
       }

@@ -164,6 +164,15 @@ pnpm db:seed          # seed de admin, marketplaces e templates
 - SEO programatico em `/seo`, com rascunho, edicao e publicacao.
 - Jobs BullMQ/fallback para analise de preco, score, cupons e rascunhos SEO.
 
+## V3 Automacao
+
+- Camada operacional `publication_schedule` ligada ao executor de publicacoes.
+- Banco de criativos `creative_assets` com prompt, status, canal e URL publica.
+- Painel `/automacao` para fila multicanal, criativos, newsletter, publish queue e retry.
+- Publicacao Telegram, WhatsApp, Instagram e Facebook Page via Graph API.
+- Jobs BullMQ/fallback: `publish-queue`, `retry-publication`, `image-generation` e `newsletter-send`.
+- Logs e auditoria para agendamentos, criativos e newsletter.
+
 ## Seguranca
 
 - Nao coloque senhas ou tokens reais no codigo.

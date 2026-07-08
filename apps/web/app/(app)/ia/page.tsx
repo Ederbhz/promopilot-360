@@ -313,6 +313,7 @@ export default function IaPage() {
                   <option value="WHATSAPP">WhatsApp</option>
                   <option value="TELEGRAM">Telegram</option>
                   <option value="INSTAGRAM">Instagram</option>
+                  <option value="FACEBOOK">Facebook</option>
                   <option value="MANUAL">Manual</option>
                 </select>
               </label>

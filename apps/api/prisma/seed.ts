@@ -84,6 +84,21 @@ Link afiliado:
 Preco e disponibilidade podem mudar sem aviso.
 
 #oferta #promocao #achadinhos`
+  },
+  {
+    name: "Facebook Oferta",
+    channel: Channel.FACEBOOK,
+    isDefault: true,
+    content: `Oferta selecionada: {{titulo}}
+
+{{preco_atual}}
+{{#if cupom}}Cupom: {{cupom}}{{/if}}
+{{#if desconto_percentual}}Desconto: {{desconto_percentual}}{{/if}}
+
+Comprar com link afiliado:
+{{link_afiliado}}
+
+Preco, estoque e cupom podem mudar sem aviso.`
   }
 ];
 

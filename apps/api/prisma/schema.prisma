@@ -49,6 +49,7 @@ enum Channel {
   TELEGRAM
   WHATSAPP
   INSTAGRAM
+  FACEBOOK
   MANUAL
 }
 
@@ -153,6 +154,8 @@ model Product {
   couponProducts    CouponProduct[]
   seoPages          SeoPage[]
   opportunities     ProductOpportunity[]
+  publicationSchedules PublicationSchedule[]
+  creativeAssets    CreativeAsset[]
 
   @@index([marketplaceId])
   @@index([categoryId])
@@ -220,6 +223,7 @@ model Offer {
   shortLinks          ShortLink[]
   clickEvents         ClickEvent[]
   generatedContents   GeneratedContent[]
+  publicationSchedules PublicationSchedule[]
 
   @@index([marketplaceId])
   @@index([status])
@@ -322,6 +326,7 @@ model ScheduledPost {
   updatedAt     DateTime            @updatedAt
   publishLogs   PublishLog[]
   messageSendLogs MessageSendLog[]
+  publicationSchedule PublicationSchedule?
 
   @@index([status, scheduledAt])
   @@index([whatsappGroupId])
@@ -632,4 +637,51 @@ model ProductOpportunity {
   @@index([scoreId], map: "idx_product_opportunities_score")
   @@index([status], map: "idx_product_opportunities_status")
   @@map("product_opportunities")
+}
+
+model PublicationSchedule {
+  id              String         @id @default(uuid())
+  productId       String?        @map("product_id")
+  product         Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  offerId         String?        @map("offer_id")
+  offer           Offer?         @relation(fields: [offerId], references: [id], onDelete: SetNull)
+  scheduledPostId String?        @unique @map("scheduled_post_id")
+  scheduledPost   ScheduledPost? @relation(fields: [scheduledPostId], references: [id], onDelete: SetNull)
+  creativeAssetId String?        @map("creative_asset_id")
+  creativeAsset   CreativeAsset? @relation(fields: [creativeAssetId], references: [id], onDelete: SetNull)
+  channel         String         @db.VarChar(60)
+  message         String?
+  scheduledAt     DateTime?      @map("scheduled_at")
+  publishedAt     DateTime?      @map("published_at")
+  status          String         @default("SCHEDULED") @db.VarChar(40)
+  attempts        Int            @default(0)
+  errorMessage    String?        @map("error_message")
+  metadata        Json?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  @@index([productId], map: "idx_publication_schedule_product")
+  @@index([offerId], map: "idx_publication_schedule_offer")
+  @@index([channel], map: "idx_publication_schedule_channel")
+  @@index([status, scheduledAt], map: "idx_publication_schedule_status_time")
+  @@map("publication_schedule")
+}
+
+model CreativeAsset {
+  id           String                @id @default(uuid())
+  productId    String?               @map("product_id")
+  product      Product?              @relation(fields: [productId], references: [id], onDelete: SetNull)
+  type         String                @db.VarChar(50)
+  fileUrl      String?               @map("file_url")
+  prompt       String?
+  status       String                @default("DRAFT") @db.VarChar(30)
+  channel      String?               @db.VarChar(60)
+  metadata     Json?
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  schedules    PublicationSchedule[]
+
+  @@index([productId], map: "idx_creative_assets_product")
+  @@index([status], map: "idx_creative_assets_status")
+  @@map("creative_assets")
 }

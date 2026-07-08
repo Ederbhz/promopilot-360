@@ -1,5 +1,6 @@
 import { Queue, Worker } from "bullmq";
 import { env } from "../config/env.js";
+import { processDuePublicationSchedules, retryFailedPublicationSchedules } from "../services/automation.js";
 import { runIntelligenceJobs } from "../services/intelligence.js";
 import { processDueScheduledPosts } from "../services/scheduler.js";
 
@@ -14,7 +15,11 @@ export const queueNames = {
   scoreCalculation: "score-calculation-queue",
   couponValidation: "coupon-validation-queue",
   seoGeneration: "seo-generation-queue",
-  aiContent: "ai-content-queue"
+  aiContent: "ai-content-queue",
+  publishQueue: "publish-queue",
+  retryPublication: "retry-publication",
+  imageGeneration: "image-generation",
+  newsletterSend: "newsletter-send"
 } as const;
 
 export async function startBullMqScheduler() {
@@ -22,6 +27,8 @@ export async function startBullMqScheduler() {
 
   const scheduledPostsQueue = new Queue(queueNames.scheduledPosts, { connection });
   const intelligenceQueue = new Queue(queueNames.priceAnalysis, { connection });
+  const publishQueue = new Queue(queueNames.publishQueue, { connection });
+  const retryPublicationQueue = new Queue(queueNames.retryPublication, { connection });
   const worker = new Worker(
     queueNames.scheduledPosts,
     async () => {
@@ -36,6 +43,20 @@ export async function startBullMqScheduler() {
     },
     { connection }
   );
+  const publishWorker = new Worker(
+    queueNames.publishQueue,
+    async () => {
+      await processDuePublicationSchedules();
+    },
+    { connection }
+  );
+  const retryPublicationWorker = new Worker(
+    queueNames.retryPublication,
+    async () => {
+      await retryFailedPublicationSchedules();
+    },
+    { connection }
+  );
 
   const interval = setInterval(() => {
     scheduledPostsQueue
@@ -47,19 +68,39 @@ export async function startBullMqScheduler() {
       .add("runIntelligenceJobs", {}, { removeOnComplete: true, removeOnFail: 50 })
       .catch((error) => console.warn("Falha ao enfileirar runIntelligenceJobs:", error));
   }, 6 * 60 * 60_000);
+  const publishInterval = setInterval(() => {
+    publishQueue
+      .add("publishDueSchedules", {}, { removeOnComplete: true, removeOnFail: 50 })
+      .catch((error) => console.warn("Falha ao enfileirar publishDueSchedules:", error));
+  }, 60_000);
+  const retryInterval = setInterval(() => {
+    retryPublicationQueue
+      .add("retryFailedSchedules", {}, { removeOnComplete: true, removeOnFail: 50 })
+      .catch((error) => console.warn("Falha ao enfileirar retryFailedSchedules:", error));
+  }, 5 * 60_000);
 
   return {
     queue: scheduledPostsQueue,
     intelligenceQueue,
+    publishQueue,
+    retryPublicationQueue,
     worker,
     intelligenceWorker,
+    publishWorker,
+    retryPublicationWorker,
     async close() {
       clearInterval(interval);
       clearInterval(intelligenceInterval);
+      clearInterval(publishInterval);
+      clearInterval(retryInterval);
       await worker.close();
       await intelligenceWorker.close();
+      await publishWorker.close();
+      await retryPublicationWorker.close();
       await scheduledPostsQueue.close();
       await intelligenceQueue.close();
+      await publishQueue.close();
+      await retryPublicationQueue.close();
     }
   };
 }

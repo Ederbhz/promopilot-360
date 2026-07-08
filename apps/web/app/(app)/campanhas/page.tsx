@@ -210,6 +210,7 @@ export default function CampanhasPage() {
                   <option value="WHATSAPP">WhatsApp</option>
                   <option value="TELEGRAM">Telegram</option>
                   <option value="INSTAGRAM">Instagram</option>
+                  <option value="FACEBOOK">Facebook</option>
                 </select>
               </label>
             </div>
