@@ -1,6 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { env } from "../config/env.js";
 import { processDuePublicationSchedules, retryFailedPublicationSchedules } from "../services/automation.js";
+import { auditAiCosts, indexVectorDocuments, runAgent, trainMlModel } from "../services/agents.js";
 import { runIntelligenceJobs } from "../services/intelligence.js";
 import { processDueScheduledPosts } from "../services/scheduler.js";
 
@@ -19,7 +20,17 @@ export const queueNames = {
   publishQueue: "publish-queue",
   retryPublication: "retry-publication",
   imageGeneration: "image-generation",
-  newsletterSend: "newsletter-send"
+  newsletterSend: "newsletter-send",
+  agentScout: "agent-scout-queue",
+  agentContent: "agent-content-queue",
+  agentSeo: "agent-seo-queue",
+  agentCreative: "agent-creative-queue",
+  agentPublisher: "agent-publisher-queue",
+  agentAnalytics: "agent-analytics-queue",
+  mlTraining: "ml-training-queue",
+  mlPrediction: "ml-prediction-queue",
+  vectorIndexing: "vector-indexing-queue",
+  aiCostAudit: "ai-cost-audit-queue"
 } as const;
 
 export async function startBullMqScheduler() {
@@ -29,6 +40,11 @@ export async function startBullMqScheduler() {
   const intelligenceQueue = new Queue(queueNames.priceAnalysis, { connection });
   const publishQueue = new Queue(queueNames.publishQueue, { connection });
   const retryPublicationQueue = new Queue(queueNames.retryPublication, { connection });
+  const scoutQueue = new Queue(queueNames.agentScout, { connection });
+  const analyticsQueue = new Queue(queueNames.agentAnalytics, { connection });
+  const mlTrainingQueue = new Queue(queueNames.mlTraining, { connection });
+  const vectorIndexingQueue = new Queue(queueNames.vectorIndexing, { connection });
+  const aiCostAuditQueue = new Queue(queueNames.aiCostAudit, { connection });
   const worker = new Worker(
     queueNames.scheduledPosts,
     async () => {
@@ -57,6 +73,41 @@ export async function startBullMqScheduler() {
     },
     { connection }
   );
+  const scoutWorker = new Worker(
+    queueNames.agentScout,
+    async () => {
+      await runAgent("scout", { limit: 50, source: "job_daily_opportunity_scan" });
+    },
+    { connection }
+  );
+  const analyticsWorker = new Worker(
+    queueNames.agentAnalytics,
+    async () => {
+      await runAgent("analytics", { source: "job_hourly_analytics_review" });
+    },
+    { connection }
+  );
+  const mlTrainingWorker = new Worker(
+    queueNames.mlTraining,
+    async () => {
+      await trainMlModel();
+    },
+    { connection }
+  );
+  const vectorIndexingWorker = new Worker(
+    queueNames.vectorIndexing,
+    async () => {
+      await indexVectorDocuments(200);
+    },
+    { connection }
+  );
+  const aiCostAuditWorker = new Worker(
+    queueNames.aiCostAudit,
+    async () => {
+      await auditAiCosts();
+    },
+    { connection }
+  );
 
   const interval = setInterval(() => {
     scheduledPostsQueue
@@ -78,29 +129,79 @@ export async function startBullMqScheduler() {
       .add("retryFailedSchedules", {}, { removeOnComplete: true, removeOnFail: 50 })
       .catch((error) => console.warn("Falha ao enfileirar retryFailedSchedules:", error));
   }, 5 * 60_000);
+  const scoutInterval = setInterval(() => {
+    scoutQueue
+      .add("dailyOpportunityScan", {}, { removeOnComplete: true, removeOnFail: 50 })
+      .catch((error) => console.warn("Falha ao enfileirar dailyOpportunityScan:", error));
+  }, 24 * 60 * 60_000);
+  const analyticsInterval = setInterval(() => {
+    analyticsQueue
+      .add("hourlyAnalyticsReview", {}, { removeOnComplete: true, removeOnFail: 50 })
+      .catch((error) => console.warn("Falha ao enfileirar hourlyAnalyticsReview:", error));
+  }, 60 * 60_000);
+  const mlTrainingInterval = setInterval(() => {
+    mlTrainingQueue
+      .add("mlTraining", {}, { removeOnComplete: true, removeOnFail: 50 })
+      .catch((error) => console.warn("Falha ao enfileirar mlTraining:", error));
+  }, 24 * 60 * 60_000);
+  const vectorIndexingInterval = setInterval(() => {
+    vectorIndexingQueue
+      .add("vectorIndexing", {}, { removeOnComplete: true, removeOnFail: 50 })
+      .catch((error) => console.warn("Falha ao enfileirar vectorIndexing:", error));
+  }, 24 * 60 * 60_000);
+  const aiCostAuditInterval = setInterval(() => {
+    aiCostAuditQueue
+      .add("aiCostAudit", {}, { removeOnComplete: true, removeOnFail: 50 })
+      .catch((error) => console.warn("Falha ao enfileirar aiCostAudit:", error));
+  }, 60 * 60_000);
 
   return {
     queue: scheduledPostsQueue,
     intelligenceQueue,
     publishQueue,
     retryPublicationQueue,
+    scoutQueue,
+    analyticsQueue,
+    mlTrainingQueue,
+    vectorIndexingQueue,
+    aiCostAuditQueue,
     worker,
     intelligenceWorker,
     publishWorker,
     retryPublicationWorker,
+    scoutWorker,
+    analyticsWorker,
+    mlTrainingWorker,
+    vectorIndexingWorker,
+    aiCostAuditWorker,
     async close() {
       clearInterval(interval);
       clearInterval(intelligenceInterval);
       clearInterval(publishInterval);
       clearInterval(retryInterval);
+      clearInterval(scoutInterval);
+      clearInterval(analyticsInterval);
+      clearInterval(mlTrainingInterval);
+      clearInterval(vectorIndexingInterval);
+      clearInterval(aiCostAuditInterval);
       await worker.close();
       await intelligenceWorker.close();
       await publishWorker.close();
       await retryPublicationWorker.close();
+      await scoutWorker.close();
+      await analyticsWorker.close();
+      await mlTrainingWorker.close();
+      await vectorIndexingWorker.close();
+      await aiCostAuditWorker.close();
       await scheduledPostsQueue.close();
       await intelligenceQueue.close();
       await publishQueue.close();
       await retryPublicationQueue.close();
+      await scoutQueue.close();
+      await analyticsQueue.close();
+      await mlTrainingQueue.close();
+      await vectorIndexingQueue.close();
+      await aiCostAuditQueue.close();
     }
   };
 }

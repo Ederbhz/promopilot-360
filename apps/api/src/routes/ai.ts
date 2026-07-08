@@ -5,6 +5,12 @@ import { recordAudit } from "../lib/audit.js";
 import { asyncHandler, HttpError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { jsonInput } from "../lib/sanitize.js";
+import {
+  acceptRecommendation,
+  executeRecommendation,
+  listRecommendations,
+  rejectRecommendation
+} from "../services/agents.js";
 
 const router = Router();
 
@@ -51,6 +57,57 @@ router.get(
       take: 100
     });
     res.json(contents);
+  })
+);
+
+router.get(
+  "/recommendations",
+  asyncHandler(async (req, res) => {
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    res.json(await listRecommendations(status));
+  })
+);
+
+router.post(
+  "/recommendations/:id/accept",
+  asyncHandler(async (req, res) => {
+    const recommendation = await acceptRecommendation(req.params.id!, req.user?.id);
+    await recordAudit(req, {
+      entity: "AiRecommendation",
+      entityId: recommendation.id,
+      action: "accept",
+      after: recommendation
+    });
+    res.json(recommendation);
+  })
+);
+
+router.post(
+  "/recommendations/:id/reject",
+  asyncHandler(async (req, res) => {
+    const data = z.object({ reason: z.string().optional() }).parse(req.body ?? {});
+    const recommendation = await rejectRecommendation(req.params.id!, data.reason);
+    await recordAudit(req, {
+      entity: "AiRecommendation",
+      entityId: recommendation.id,
+      action: "reject",
+      after: recommendation
+    });
+    res.json(recommendation);
+  })
+);
+
+router.post(
+  "/recommendations/:id/execute",
+  asyncHandler(async (req, res) => {
+    const result = await executeRecommendation(req.params.id!, req.user?.id);
+    await recordAudit(req, {
+      entity: "AiRecommendation",
+      entityId: result.recommendation.id,
+      action: "execute",
+      after: result.recommendation
+    });
+    res.json(result);
   })
 );
 

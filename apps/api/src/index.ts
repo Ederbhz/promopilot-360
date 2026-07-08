@@ -9,6 +9,7 @@ import { prisma } from "./lib/prisma.js";
 import apiRoutes from "./routes/index.js";
 import shortLinkRoutes from "./routes/short-links.js";
 import { processDuePublicationSchedules, retryFailedPublicationSchedules } from "./services/automation.js";
+import { auditAiCosts, indexVectorDocuments, runAgent, trainMlModel } from "./services/agents.js";
 import { runIntelligenceJobs } from "./services/intelligence.js";
 import { processDueScheduledPosts } from "./services/scheduler.js";
 import { startBullMqScheduler } from "./workers/queues.js";
@@ -59,6 +60,11 @@ let fallbackInterval: NodeJS.Timeout | null = null;
 let intelligenceFallbackInterval: NodeJS.Timeout | null = null;
 let automationFallbackInterval: NodeJS.Timeout | null = null;
 let retryFallbackInterval: NodeJS.Timeout | null = null;
+let scoutFallbackInterval: NodeJS.Timeout | null = null;
+let analyticsFallbackInterval: NodeJS.Timeout | null = null;
+let mlFallbackInterval: NodeJS.Timeout | null = null;
+let vectorFallbackInterval: NodeJS.Timeout | null = null;
+let costFallbackInterval: NodeJS.Timeout | null = null;
 let bullMqRuntime: Awaited<ReturnType<typeof startBullMqScheduler>> | null = null;
 
 if (env.DISABLE_WORKERS !== "true") {
@@ -89,6 +95,31 @@ if (env.DISABLE_WORKERS !== "true") {
           console.warn("Falha ao retentar publicacoes V3:", err);
         });
       }, 5 * 60_000);
+      scoutFallbackInterval = setInterval(() => {
+        runAgent("scout", { limit: 50, source: "job_daily_opportunity_scan" }).catch((err) => {
+          console.warn("Falha ao executar Scout AI:", err);
+        });
+      }, 24 * 60 * 60_000);
+      analyticsFallbackInterval = setInterval(() => {
+        runAgent("analytics", { source: "job_hourly_analytics_review" }).catch((err) => {
+          console.warn("Falha ao executar Analytics AI:", err);
+        });
+      }, 60 * 60_000);
+      mlFallbackInterval = setInterval(() => {
+        trainMlModel().catch((err) => {
+          console.warn("Falha ao treinar modelo V4:", err);
+        });
+      }, 24 * 60 * 60_000);
+      vectorFallbackInterval = setInterval(() => {
+        indexVectorDocuments(200).catch((err) => {
+          console.warn("Falha ao indexar memoria vetorial:", err);
+        });
+      }, 24 * 60 * 60_000);
+      costFallbackInterval = setInterval(() => {
+        auditAiCosts().catch((err) => {
+          console.warn("Falha ao auditar custos de IA:", err);
+        });
+      }, 60 * 60_000);
     });
 }
 
@@ -100,6 +131,11 @@ async function shutdown() {
   if (intelligenceFallbackInterval) clearInterval(intelligenceFallbackInterval);
   if (automationFallbackInterval) clearInterval(automationFallbackInterval);
   if (retryFallbackInterval) clearInterval(retryFallbackInterval);
+  if (scoutFallbackInterval) clearInterval(scoutFallbackInterval);
+  if (analyticsFallbackInterval) clearInterval(analyticsFallbackInterval);
+  if (mlFallbackInterval) clearInterval(mlFallbackInterval);
+  if (vectorFallbackInterval) clearInterval(vectorFallbackInterval);
+  if (costFallbackInterval) clearInterval(costFallbackInterval);
   if (bullMqRuntime) await bullMqRuntime.close();
   server.close();
   await prisma.$disconnect();

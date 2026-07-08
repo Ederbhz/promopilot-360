@@ -173,6 +173,15 @@ pnpm db:seed          # seed de admin, marketplaces e templates
 - Jobs BullMQ/fallback: `publish-queue`, `retry-publication`, `image-generation` e `newsletter-send`.
 - Logs e auditoria para agendamentos, criativos e newsletter.
 
+## V4 AI, Analytics e Autonomia
+
+- Agentes AI Scout, Content, SEO, Creative, Publisher, Analytics, Affiliate e Vector Indexing.
+- Banco operacional com `agent_runs`, `ai_recommendations`, `performance_metrics`, `ml_predictions`, `vector_documents`, `ai_cost_control` e `autonomy_policies`.
+- APIs protegidas em `/agents`, `/ai/recommendations`, `/analytics` e `/ml`.
+- Painel `/agentes` para comando dos agentes, aceite/execucao de recomendacoes, politica de autonomia e dashboard executivo.
+- Modelo ML hibrido para predicao de performance e memoria vetorial local em JSONB, sem exigir extensao pgvector.
+- Jobs BullMQ/fallback para agentes, treino ML, predicao, indexacao vetorial e auditoria de custo de IA.
+
 ## Seguranca
 
 - Nao coloque senhas ou tokens reais no codigo.

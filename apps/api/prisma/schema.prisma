@@ -90,6 +90,8 @@ model User {
   updatedAt         DateTime           @updatedAt
   generatedContents GeneratedContent[]
   auditLogs         AuditLog[]
+  acceptedRecommendations AiRecommendation[]
+  aiCostControls    AiCostControl[]
 }
 
 model Marketplace {
@@ -156,6 +158,9 @@ model Product {
   opportunities     ProductOpportunity[]
   publicationSchedules PublicationSchedule[]
   creativeAssets    CreativeAsset[]
+  aiRecommendations AiRecommendation[]
+  performanceMetrics PerformanceMetric[]
+  mlPredictions     MlPrediction[]
 
   @@index([marketplaceId])
   @@index([categoryId])
@@ -659,6 +664,7 @@ model PublicationSchedule {
   metadata        Json?
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
+  performanceMetrics PerformanceMetric[]
 
   @@index([productId], map: "idx_publication_schedule_product")
   @@index([offerId], map: "idx_publication_schedule_offer")
@@ -684,4 +690,140 @@ model CreativeAsset {
   @@index([productId], map: "idx_creative_assets_product")
   @@index([status], map: "idx_creative_assets_status")
   @@map("creative_assets")
+}
+
+model AgentRun {
+  id            String   @id @default(uuid())
+  agentName     String   @map("agent_name") @db.VarChar(120)
+  input         Json?
+  output        Json?
+  status        String   @default("pending") @db.VarChar(40)
+  errorMessage  String?  @map("error_message")
+  tokensInput   Int?     @map("tokens_input")
+  tokensOutput  Int?     @map("tokens_output")
+  estimatedCost Decimal? @map("estimated_cost") @db.Decimal(12, 6)
+  startedAt     DateTime @default(now()) @map("started_at")
+  finishedAt    DateTime? @map("finished_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([agentName], map: "idx_agent_runs_agent")
+  @@index([status], map: "idx_agent_runs_status")
+  @@index([createdAt], map: "idx_agent_runs_created")
+  @@map("agent_runs")
+}
+
+model AiRecommendation {
+  id                 String    @id @default(uuid())
+  productId          String?   @map("product_id")
+  product            Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  recommendationType String?   @map("recommendation_type") @db.VarChar(80)
+  title              String?
+  description        String?
+  priority           String?   @db.VarChar(40)
+  confidence         Decimal?  @db.Decimal(5, 2)
+  agentName          String?   @map("agent_name") @db.VarChar(120)
+  status             String    @default("pending") @db.VarChar(40)
+  acceptedById       String?   @map("accepted_by")
+  acceptedBy         User?     @relation(fields: [acceptedById], references: [id], onDelete: SetNull)
+  acceptedAt         DateTime? @map("accepted_at")
+  rejectedReason     String?   @map("rejected_reason")
+  metadata           Json?
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@index([productId], map: "idx_ai_recommendations_product")
+  @@index([recommendationType], map: "idx_ai_recommendations_type")
+  @@index([status], map: "idx_ai_recommendations_status")
+  @@map("ai_recommendations")
+}
+
+model PerformanceMetric {
+  id             String    @id @default(uuid())
+  productId      String?   @map("product_id")
+  product        Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  publicationId  String?   @map("publication_id")
+  publication    PublicationSchedule? @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  channel        String?   @db.VarChar(80)
+  impressions    Int      @default(0)
+  clicks         Int      @default(0)
+  conversions    Int      @default(0)
+  revenue        Decimal  @default(0) @db.Decimal(12, 2)
+  commission     Decimal  @default(0) @db.Decimal(12, 2)
+  ctr            Decimal? @db.Decimal(8, 4)
+  conversionRate Decimal? @map("conversion_rate") @db.Decimal(8, 4)
+  dateReference  DateTime? @map("date_reference") @db.Date
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([productId], map: "idx_performance_product")
+  @@index([channel], map: "idx_performance_channel")
+  @@index([dateReference], map: "idx_performance_date")
+  @@map("performance_metrics")
+}
+
+model MlPrediction {
+  id              String   @id @default(uuid())
+  productId       String?  @map("product_id")
+  product         Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  modelName       String?  @map("model_name") @db.VarChar(120)
+  predictionType  String?  @map("prediction_type") @db.VarChar(80)
+  predictionValue Decimal? @map("prediction_value") @db.Decimal(12, 6)
+  confidence      Decimal? @db.Decimal(5, 2)
+  features        Json?
+  explanation     String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([productId], map: "idx_ml_predictions_product")
+  @@index([modelName], map: "idx_ml_predictions_model")
+  @@index([predictionType], map: "idx_ml_predictions_type")
+  @@map("ml_predictions")
+}
+
+model VectorDocument {
+  id          String   @id @default(uuid())
+  entityType  String?  @map("entity_type") @db.VarChar(80)
+  entityId    String?  @map("entity_id")
+  content     String?
+  metadata    Json?
+  embedding   Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId], map: "idx_vector_documents_entity")
+  @@map("vector_documents")
+}
+
+model AiCostControl {
+  id            String   @id @default(uuid())
+  provider      String?  @db.VarChar(80)
+  model         String?  @db.VarChar(120)
+  operation     String?  @db.VarChar(120)
+  tokensInput   Int?     @map("tokens_input")
+  tokensOutput  Int?     @map("tokens_output")
+  estimatedCost Decimal? @map("estimated_cost") @db.Decimal(12, 6)
+  userId        String?  @map("user_id")
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([userId], map: "idx_ai_cost_control_user")
+  @@index([createdAt], map: "idx_ai_cost_control_created")
+  @@map("ai_cost_control")
+}
+
+model AutonomyPolicy {
+  id                    String   @id @default(uuid())
+  name                  String   @default("default") @db.VarChar(120)
+  mode                  String   @default("manual") @db.VarChar(40)
+  dailyPublicationLimit Int      @default(10) @map("daily_publication_limit")
+  allowedChannels       String[] @default([]) @map("allowed_channels")
+  minScore              Decimal  @default(75) @map("min_score") @db.Decimal(5, 2)
+  minCommission         Decimal? @map("min_commission") @db.Decimal(12, 2)
+  startTime             String?  @map("start_time") @db.VarChar(5)
+  endTime               String?  @map("end_time") @db.VarChar(5)
+  requireCoupon         Boolean  @default(false) @map("require_coupon")
+  dailyAiCostLimit      Decimal  @default(5) @map("daily_ai_cost_limit") @db.Decimal(12, 2)
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@index([active], map: "idx_autonomy_policy_active")
+  @@map("autonomy_policies")
 }
